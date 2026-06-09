@@ -8,22 +8,39 @@ use RuntimeException;
 
 class GoogleTextToSpeechService
 {
+    public const TWILIO_VOICE_ID = 'twilio-basic';
+
+    public const TWILIO_VOICE = [
+        'name' => 'Secretaria estandar',
+        'description' => 'Voz incluida para llamadas',
+        'provider' => 'twilio',
+        'badge' => 'Gratis',
+    ];
+
     public const VOICES = [
         'es-US-Neural2-A' => [
             'name' => 'Sofia',
             'description' => 'Femenina natural',
+            'provider' => 'google',
+            'badge' => 'Premium',
         ],
         'es-US-Neural2-B' => [
             'name' => 'Mateo',
             'description' => 'Masculina natural',
+            'provider' => 'google',
+            'badge' => 'Premium',
         ],
         'es-US-Neural2-C' => [
             'name' => 'Carlos',
             'description' => 'Masculina alternativa',
+            'provider' => 'google',
+            'badge' => 'Premium',
         ],
         'es-US-Chirp3-HD-Aoede' => [
             'name' => 'Premium HD',
             'description' => 'Voz avanzada',
+            'provider' => 'google',
+            'badge' => 'Premium HD',
         ],
     ];
 
@@ -38,6 +55,10 @@ class GoogleTextToSpeechService
 
         if ($text === '') {
             throw new RuntimeException('El texto para generar voz esta vacio.');
+        }
+
+        if ($this->isTwilioVoice($voice)) {
+            throw new RuntimeException('La voz de Twilio se reproduce dentro de la llamada y no genera audio MP3.');
         }
 
         $response = Http::withToken($this->accessToken())
@@ -68,17 +89,25 @@ class GoogleTextToSpeechService
 
     public function voiceOptions(): array
     {
-        return self::VOICES;
+        return [
+            self::TWILIO_VOICE_ID => self::TWILIO_VOICE,
+            ...self::VOICES,
+        ];
     }
 
     public function validVoice(?string $voice): bool
     {
-        return is_string($voice) && array_key_exists($voice, self::VOICES);
+        return is_string($voice) && array_key_exists($voice, $this->voiceOptions());
+    }
+
+    public function isTwilioVoice(?string $voice): bool
+    {
+        return $voice === self::TWILIO_VOICE_ID;
     }
 
     private function voiceName(?string $voice): string
     {
-        if ($this->validVoice($voice)) {
+        if (is_string($voice) && array_key_exists($voice, self::VOICES)) {
             return $voice;
         }
 

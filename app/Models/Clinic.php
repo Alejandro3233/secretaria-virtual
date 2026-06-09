@@ -46,6 +46,28 @@ class Clinic extends Model
         'google_last_synced_at' => 'datetime',
     ];
 
+    public static function timezoneForCountry(?string $countryCode): string
+    {
+        return match (strtoupper((string) $countryCode)) {
+            'ES' => 'Europe/Madrid',
+            'GB' => 'Europe/London',
+            'MX' => 'America/Mexico_City',
+            'CO' => 'America/Bogota',
+            default => 'America/New_York',
+        };
+    }
+
+    public function localTimezone(): string
+    {
+        $timezone = $this->timezone ?: static::timezoneForCountry($this->country_code);
+
+        if ($timezone === 'America/New_York' && strtoupper((string) $this->country_code) !== 'US') {
+            return static::timezoneForCountry($this->country_code);
+        }
+
+        return $timezone;
+    }
+
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'subscription_plan_id');

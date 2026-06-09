@@ -15,7 +15,17 @@ class GoogleTextToSpeechController extends Controller
             'text',
             'Hola, soy la secretaria virtual del salon. Puedo ayudarte a confirmar, cambiar o reservar una cita.'
         );
-        $voice = (string) $request->query('voice', $request->user()?->primaryClinic()?->google_tts_voice ?: config('google.tts.voice'));
+        $voice = (string) $request->query(
+            'voice',
+            $request->user()?->primaryClinic()?->google_tts_voice ?: GoogleTextToSpeechService::TWILIO_VOICE_ID
+        );
+
+        if ($tts->isTwilioVoice($voice)) {
+            return response('La Secretaria estandar se reproduce directamente dentro de la llamada. Usa el boton de prueba en ajustes para escuchar una previsualizacion aproximada.', 200, [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'Cache-Control' => 'no-store',
+            ]);
+        }
 
         $audio = $tts->synthesize($text, $voice);
 

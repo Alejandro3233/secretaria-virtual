@@ -6,6 +6,7 @@ use App\Models\Stylist;
 use App\Services\ClinicResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StaffController extends Controller
@@ -50,6 +51,19 @@ class StaffController extends Controller
         $stylist->update($this->validatedData($request, $clinic->id));
 
         return redirect('/personal')->with('staff_status', 'Personal actualizado correctamente.');
+    }
+
+    public function destroy(Request $request, Stylist $stylist): RedirectResponse
+    {
+        $clinic = $request->user()->primaryClinic();
+        abort_unless($clinic && $stylist->clinic_id === $clinic->id, 404);
+
+        DB::transaction(function () use ($stylist): void {
+            $stylist->appointments()->update(['stylist_id' => null]);
+            $stylist->delete();
+        });
+
+        return redirect('/personal')->with('staff_status', 'Empleado eliminado correctamente. La agenda se actualizo y sus citas quedaron sin asignar.');
     }
 
     private function validatedData(Request $request, int $clinicId): array

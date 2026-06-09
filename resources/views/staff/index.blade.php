@@ -86,11 +86,11 @@
             <div class="grid-2">
                 <div>
                     <label for="work_starts_at">Entrada</label>
-                    <input id="work_starts_at" name="work_starts_at" type="time" value="{{ old('work_starts_at', '09:00') }}">
+                    <input id="work_starts_at" name="work_starts_at" type="time" value="{{ old('work_starts_at', '08:00') }}">
                 </div>
                 <div>
                     <label for="work_ends_at">Salida</label>
-                    <input id="work_ends_at" name="work_ends_at" type="time" value="{{ old('work_ends_at', '17:00') }}">
+                    <input id="work_ends_at" name="work_ends_at" type="time" value="{{ old('work_ends_at', '21:00') }}">
                 </div>
             </div>
         </section>
@@ -109,6 +109,10 @@
                 <form id="stylist-form-{{ $stylist->id }}" method="POST" action="/personal/{{ $stylist->id }}">
                     @csrf
                     @method('PUT')
+                </form>
+                <form id="stylist-delete-form-{{ $stylist->id }}" method="POST" action="/personal/{{ $stylist->id }}" onsubmit="return confirm('Eliminar este empleado? Sus citas quedaran sin asignar y su horario dejara de aparecer en la agenda.');">
+                    @csrf
+                    @method('DELETE')
                 </form>
             @endforeach
 
@@ -164,7 +168,10 @@
                                 </label>
                             </td>
                             <td>
-                                <button form="stylist-form-{{ $stylist->id }}" class="btn primary" type="submit">Actualizar</button>
+                                <div class="actions" style="gap:8px;">
+                                    <button form="stylist-form-{{ $stylist->id }}" class="btn primary" type="submit">Actualizar</button>
+                                    <button form="stylist-delete-form-{{ $stylist->id }}" class="btn" type="submit">Eliminar</button>
+                                </div>
                             </td>
                         </tr>
                     @endforeach

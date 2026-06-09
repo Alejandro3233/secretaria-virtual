@@ -46,4 +46,9 @@ return [
         'supported_countries' => array_filter(array_map('trim', explode(',', env('TWILIO_SUPPORTED_COUNTRIES', 'US,CA,GB,ES,MX,CO')))),
     ],
 
+    'stripe' => [
+        'secret_key' => env('STRIPE_SECRET_KEY'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+    ],
+
 ];

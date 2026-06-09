@@ -6,7 +6,7 @@
     <title>Restablecer contrasena - Secretaria Virtual</title>
     <style>
         * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #fbf7f9; color: #181216; padding: 24px; }
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: "OpenAI Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; background: #fbf7f9; color: #181216; padding: 24px; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         form { width: min(460px, 100%); background: white; border: 1px solid #eadfe5; border-radius: 8px; padding: 28px; box-shadow: 0 24px 60px rgba(60, 22, 41, .12); }
         h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }
         p { color: #70646b; line-height: 1.55; margin: 0 0 22px; }

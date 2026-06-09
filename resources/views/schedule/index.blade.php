@@ -161,7 +161,7 @@
 
                 @if ($selectedView === 'day')
                     <div class="calendar-week calendar-day-view" style="grid-template-columns: 74px repeat({{ max(1, $visibleStylists->count()) }}, minmax(160px, 1fr));">
-                        <div class="calendar-timezone">GMT{{ now()->format('P') }}</div>
+                        <div class="calendar-timezone">GMT{{ now($timezone)->format('P') }}</div>
                         @forelse ($visibleStylists as $stylist)
                             <div class="calendar-day-head">
                                 <span>Estilista</span>
@@ -221,7 +221,7 @@
                     </div>
                 @else
                     <div class="calendar-week">
-                        <div class="calendar-timezone">GMT{{ now()->format('P') }}</div>
+                        <div class="calendar-timezone">GMT{{ now($timezone)->format('P') }}</div>
                         @foreach ($days as $day)
                             <div class="calendar-day-head {{ $day->isToday() ? 'is-today' : '' }}">
                                 <span>{{ ucfirst($day->locale('es')->isoFormat('ddd')) }}</span>

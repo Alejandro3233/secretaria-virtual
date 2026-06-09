@@ -178,11 +178,23 @@ class GoogleCalendarService
             $calendar->events->delete($calendarId, $appointment->google_calendar_event_id);
 
             $appointment->forceFill([
+                'google_calendar_event_id' => null,
                 'google_sync_status' => 'synced',
                 'google_synced_at' => now(),
                 'google_sync_error' => null,
             ])->save();
         } catch (\Throwable $exception) {
+            if ($this->isAlreadyDeletedGoogleEvent($exception)) {
+                $appointment->forceFill([
+                    'google_calendar_event_id' => null,
+                    'google_sync_status' => 'synced',
+                    'google_synced_at' => now(),
+                    'google_sync_error' => null,
+                ])->save();
+
+                return $appointment;
+            }
+
             $appointment->forceFill([
                 'google_sync_status' => 'failed',
                 'google_sync_error' => $exception->getMessage(),
@@ -192,6 +204,16 @@ class GoogleCalendarService
         }
 
         return $appointment;
+    }
+
+    private function isAlreadyDeletedGoogleEvent(\Throwable $exception): bool
+    {
+        $message = $exception->getMessage();
+
+        return str_contains($message, '"code": 410')
+            || str_contains($message, '"code": 404')
+            || str_contains($message, 'Resource has been deleted')
+            || str_contains($message, 'Not Found');
     }
 
     public function importUpcomingEvents(Clinic $clinic): int
@@ -204,8 +226,8 @@ class GoogleCalendarService
         $events = $calendar->events->listEvents($calendarId, [
             'singleEvents' => true,
             'orderBy' => 'startTime',
-            'timeMin' => now()->startOfWeek()->toRfc3339String(),
-            'timeMax' => now()->addDays(60)->endOfDay()->toRfc3339String(),
+            'timeMin' => now($clinic->localTimezone())->startOfWeek()->toRfc3339String(),
+            'timeMax' => now($clinic->localTimezone())->addDays(60)->endOfDay()->toRfc3339String(),
             'maxResults' => 100,
             'showDeleted' => true,
         ]);
@@ -285,8 +307,8 @@ class GoogleCalendarService
             ->where('source', 'google_calendar')
             ->where('google_calendar_id', $calendarId)
             ->whereNotNull('google_calendar_event_id')
-            ->where('starts_at', '>=', now()->startOfWeek())
-            ->where('starts_at', '<=', now()->addDays(60)->endOfDay())
+            ->where('starts_at', '>=', now($clinic->localTimezone())->startOfWeek()->timezone(config('app.timezone')))
+            ->where('starts_at', '<=', now($clinic->localTimezone())->addDays(60)->endOfDay()->timezone(config('app.timezone')))
             ->whereNotIn('google_calendar_event_id', $seenEventIds ?: ['__none__'])
             ->update([
                 'status' => 'cancelled',
@@ -342,8 +364,8 @@ class GoogleCalendarService
         return new Event([
             'summary' => $summary,
             'description' => $description,
-            'start' => $this->eventDateTime($appointment->starts_at),
-            'end' => $this->eventDateTime($appointment->ends_at ?? $appointment->starts_at->copy()->addMinutes($service?->duration_minutes ?? 60)),
+            'start' => $this->eventDateTime($appointment->starts_at, $appointment->clinic->localTimezone()),
+            'end' => $this->eventDateTime($appointment->ends_at ?? $appointment->starts_at->copy()->addMinutes($service?->duration_minutes ?? 60), $appointment->clinic->localTimezone()),
             'extendedProperties' => [
                 'private' => [
                     'secretaria_virtual_appointment_id' => (string) $appointment->id,
@@ -353,11 +375,11 @@ class GoogleCalendarService
         ]);
     }
 
-    private function eventDateTime(CarbonInterface $date): EventDateTime
+    private function eventDateTime(CarbonInterface $date, string $timezone): EventDateTime
     {
         return new EventDateTime([
-            'dateTime' => $date->toRfc3339String(),
-            'timeZone' => config('app.timezone'),
+            'dateTime' => Carbon::instance($date)->timezone($timezone)->toRfc3339String(),
+            'timeZone' => $timezone,
         ]);
     }
 

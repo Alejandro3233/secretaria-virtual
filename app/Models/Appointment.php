@@ -27,12 +27,16 @@ class Appointment extends Model
         'google_synced_at',
         'google_sync_status',
         'google_sync_error',
+        'reminder_call_enabled',
+        'reminder_sms_enabled',
     ];
 
     protected $casts = [
         'starts_at' => 'datetime',
         'ends_at' => 'datetime',
         'google_synced_at' => 'datetime',
+        'reminder_call_enabled' => 'boolean',
+        'reminder_sms_enabled' => 'boolean',
     ];
 
     public function clinic(): BelongsTo

@@ -14,6 +14,12 @@
         </div>
     @endif
 
+    @if ($errors->any())
+        <div class="card" style="margin-bottom:18px;border-color:#fecaca;background:#fef2f2;color:#991b1b;font-weight:800;">
+            {{ $errors->first() }}
+        </div>
+    @endif
+
     <section class="grid-2">
         <aside class="card">
             <div class="section-title"><h2>Tablas</h2></div>
@@ -39,6 +45,10 @@
                         @foreach ($columns as $column)
                             <th>{{ $column }}</th>
                         @endforeach
+                        @if ($table === 'users')
+                            <th>Nueva contrasena</th>
+                            <th>Confirmar contrasena</th>
+                        @endif
                         <th>Accion</th>
                     </tr>
                 </thead>
@@ -57,6 +67,14 @@
                                         @endif
                                     </td>
                                 @endforeach
+                                @if ($table === 'users')
+                                    <td style="min-width:190px;">
+                                        <input name="new_password" type="password" placeholder="Dejar vacio para no cambiar">
+                                    </td>
+                                    <td style="min-width:190px;">
+                                        <input name="new_password_confirmation" type="password" placeholder="Repetir nueva contrasena">
+                                    </td>
+                                @endif
                                 <td>
                                     <button class="btn primary" type="submit">Guardar</button>
                                 </td>
@@ -64,7 +82,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ count($columns) + 1 }}">No hay registros en esta tabla.</td>
+                            <td colspan="{{ count($columns) + ($table === 'users' ? 3 : 1) }}">No hay registros en esta tabla.</td>
                         </tr>
                     @endforelse
                 </tbody>

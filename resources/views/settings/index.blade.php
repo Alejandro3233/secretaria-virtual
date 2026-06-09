@@ -8,7 +8,8 @@
     @php($clinic = auth()->user()->primaryClinic())
     @php($googleTtsConfigured = (bool) ((config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json')))
     @php($voiceOptions = app(\App\Services\GoogleTextToSpeechService::class)->voiceOptions())
-    @php($activeVoice = $clinic?->google_tts_voice ?: config('google.tts.voice'))
+    @php($activeVoice = $clinic?->google_tts_voice ?: \App\Services\GoogleTextToSpeechService::TWILIO_VOICE_ID)
+    @php($voiceConfigured = $activeVoice === \App\Services\GoogleTextToSpeechService::TWILIO_VOICE_ID || $googleTtsConfigured)
     @php($twilioCountries = app(\App\Services\TwilioPhoneNumberService::class)->supportedCountries())
 
     @if (session('google_calendar_status'))
@@ -75,9 +76,9 @@
             <div class="item" style="border-bottom:0;padding:0;">
                 <div>
                     <b>Voz secretaria</b>
-                    <span>{{ $googleTtsConfigured ? 'Voz configurada para llamadas.' : 'Pendiente de configurar.' }}</span>
+                    <span>{{ $voiceConfigured ? 'Voz configurada para llamadas.' : 'Pendiente de configurar.' }}</span>
                 </div>
-                <span class="status integration-status {{ $googleTtsConfigured ? 'ok' : 'wait' }}">{{ $googleTtsConfigured ? 'Conectado' : 'Pendiente' }}</span>
+                <span class="status integration-status {{ $voiceConfigured ? 'ok' : 'wait' }}">{{ $voiceConfigured ? 'Conectado' : 'Pendiente' }}</span>
             </div>
         </div>
     </section>
@@ -164,27 +165,33 @@
         </div>
     </section>
 
-    <section class="card" id="voz-secretaria" style="margin-top:18px;">
+    <section class="card integration-status-bar" id="voz-secretaria" style="margin-top:18px;">
         <div class="section-title">
             <div>
                 <h2>Prueba las voces</h2>
                 <span class="subtitle">Escucha las opciones y activa la voz que usara la secretaria en las llamadas.</span>
             </div>
-            <span class="status {{ $googleTtsConfigured ? 'ok' : 'wait' }}">{{ $googleTtsConfigured ? 'Configurada' : 'Pendiente' }}</span>
+            <span class="status integration-status {{ $voiceConfigured ? 'ok' : 'wait' }}">{{ $voiceConfigured ? 'Configurada' : 'Pendiente' }}</span>
         </div>
 
         <div style="display:grid;gap:12px;">
             @foreach ($voiceOptions as $voiceId => $voice)
                 @php($isActiveVoice = $activeVoice === $voiceId)
+                @php($isTwilioVoice = ($voice['provider'] ?? null) === 'twilio')
+                @php($canPreview = $isTwilioVoice || $googleTtsConfigured)
                 <div class="item" style="align-items:center;">
                     <div>
                         <b>{{ $voice['name'] }}</b>
-                        <span>{{ $voice['description'] }}</span>
+                        <span>{{ $voice['description'] }} @if (! empty($voice['badge'])) - {{ $voice['badge'] }} @endif</span>
                     </div>
                     <div class="actions" style="margin:0;">
-                        <span class="status {{ $isActiveVoice ? 'ok' : 'wait' }}">{{ $isActiveVoice ? 'Activa' : 'Disponible' }}</span>
-                        @if ($googleTtsConfigured)
-                            <a class="btn" href="{{ route('secretary-voice.preview', ['voice' => $voiceId]) }}" target="_blank">Escuchar prueba</a>
+                        <span class="status integration-status {{ $isActiveVoice ? 'ok' : 'wait' }}">{{ $isActiveVoice ? 'Activa' : 'Disponible' }}</span>
+                        @if ($canPreview)
+                            @if ($isTwilioVoice)
+                                <button class="btn js-twilio-voice-preview" type="button" data-preview-text="Hola, soy la secretaria virtual del salon. Puedo ayudarte a confirmar, cambiar o reservar una cita.">Escuchar prueba</button>
+                            @else
+                                <button class="btn js-google-voice-preview" type="button" data-preview-url="{{ route('secretary-voice.preview', ['voice' => $voiceId]) }}">Escuchar prueba</button>
+                            @endif
                             <form method="POST" action="{{ route('secretary-voice.activate') }}">
                                 @csrf
                                 <input type="hidden" name="voice" value="{{ $voiceId }}">
@@ -197,6 +204,69 @@
                 </div>
             @endforeach
         </div>
+
+        <script>
+            let secretaryVoiceAudio = null;
+
+            function stopSecretaryVoicePreview() {
+                window.speechSynthesis?.cancel();
+
+                if (secretaryVoiceAudio) {
+                    secretaryVoiceAudio.pause();
+                    secretaryVoiceAudio.currentTime = 0;
+                }
+            }
+
+            document.querySelectorAll('.js-twilio-voice-preview').forEach((button) => {
+                button.addEventListener('click', () => {
+                    if (!('speechSynthesis' in window)) {
+                        alert('Tu navegador no permite escuchar esta prueba.');
+                        return;
+                    }
+
+                    stopSecretaryVoicePreview();
+
+                    const utterance = new SpeechSynthesisUtterance(button.dataset.previewText || '');
+                    utterance.lang = 'es-US';
+                    utterance.rate = 1;
+                    utterance.pitch = 1;
+
+                    window.speechSynthesis.speak(utterance);
+                });
+            });
+
+            document.querySelectorAll('.js-google-voice-preview').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    const originalText = button.textContent;
+
+                    try {
+                        stopSecretaryVoicePreview();
+                        button.disabled = true;
+                        button.textContent = 'Cargando...';
+
+                        const response = await fetch(button.dataset.previewUrl, {
+                            credentials: 'same-origin',
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('No se pudo generar la prueba.');
+                        }
+
+                        const audioBlob = await response.blob();
+                        const audioUrl = URL.createObjectURL(audioBlob);
+
+                        secretaryVoiceAudio = new Audio(audioUrl);
+                        secretaryVoiceAudio.addEventListener('ended', () => URL.revokeObjectURL(audioUrl), { once: true });
+                        secretaryVoiceAudio.play();
+                    } catch (error) {
+                        alert(error.message || 'No se pudo escuchar esta prueba.');
+                    } finally {
+                        button.disabled = false;
+                        button.textContent = originalText;
+                    }
+                });
+            });
+        </script>
 
     </section>
 @endsection

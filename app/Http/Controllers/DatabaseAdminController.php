@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
@@ -66,6 +67,19 @@ class DatabaseAdminController extends Controller
             if ($request->has($column)) {
                 $data[$column] = $request->input($column) === '' ? null : $request->input($column);
             }
+        }
+
+        $newPassword = (string) $request->input('new_password', '');
+
+        if ($table === 'users' && $newPassword !== '') {
+            $request->validate([
+                'new_password' => ['string', 'min:8', 'confirmed'],
+            ], [
+                'new_password.min' => 'La nueva contrasena debe tener al menos 8 caracteres.',
+                'new_password.confirmed' => 'La confirmacion de la nueva contrasena no coincide.',
+            ]);
+
+            $data['password'] = Hash::make($newPassword);
         }
 
         if ($data !== []) {

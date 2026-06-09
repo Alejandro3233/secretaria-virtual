@@ -25,7 +25,9 @@ class ClinicResolver
                 'name' => 'Salon de '.$user->name,
                 'email' => $user->email,
                 'country_code' => 'US',
+                'timezone' => Clinic::timezoneForCountry('US'),
                 'subscription_status' => 'trial',
+                'google_tts_voice' => GoogleTextToSpeechService::TWILIO_VOICE_ID,
             ]);
 
             DB::table('clinic_users')->insert([

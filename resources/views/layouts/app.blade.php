@@ -22,6 +22,7 @@
             --amber: #b45309;
             --panel: #24151d;
             --white: #ffffff;
+            --app-max-width: 1440px;
         }
 
         * { box-sizing: border-box; }
@@ -30,7 +31,9 @@
             min-height: 100vh;
             display: grid;
             grid-template-columns: 264px 1fr;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: "OpenAI Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
             color: var(--ink);
             background: var(--soft);
         }
@@ -57,10 +60,15 @@
         .brand {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 19px;
-            font-weight: 900;
+            gap: 0;
             min-width: 0;
+        }
+        .brand-logo {
+            width: 178px;
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 8px;
         }
         .brand-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .mark {
@@ -152,6 +160,7 @@
         html.sidebar-collapsed .sidebar { padding: 22px 14px; align-items: center; }
         html.sidebar-collapsed .sidebar-top { width: 100%; justify-content: center; }
         html.sidebar-collapsed .brand { justify-content: center; }
+        html.sidebar-collapsed .brand-logo { width: 44px; height: 44px; object-fit: contain; }
         html.sidebar-collapsed .brand-text,
         html.sidebar-collapsed .nav-label,
         html.sidebar-collapsed .nav-sub,
@@ -163,7 +172,11 @@
         html.sidebar-collapsed .nav-group { width: 100%; }
         html.sidebar-collapsed .logout { width: 44px; padding: 0; }
         html.sidebar-collapsed .logout::before { content: "X"; font-size: 15px; }
-        .main { min-width: 0; }
+        .main {
+            min-width: 0;
+            width: min(100%, var(--app-max-width));
+            margin: 0 auto;
+        }
         .topbar {
             min-height: 74px;
             display: grid;
@@ -238,6 +251,11 @@
         .topbar-dropdown b,
         .topbar-dropdown span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .topbar-dropdown span { margin-top: 3px; color: var(--muted); font-size: 13px; }
+        .topbar-dropdown .dropdown-head span {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.35;
+        }
         .topbar-dropdown a,
         .topbar-dropdown button {
             width: 100%;
@@ -305,13 +323,16 @@
         th { color: var(--muted); font-size: 12px; text-transform: uppercase; background: #fffafd; }
         tr:last-child td { border-bottom: 0; }
         .status { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; }
+        .integration-status-bar .item { align-items: flex-start; }
         .integration-status-bar .integration-status {
-            width: 92px;
-            height: 68px;
-            flex: 0 0 92px;
+            flex: 0 0 auto;
+            min-width: 86px;
+            min-height: 28px;
             justify-content: center;
-            padding: 0;
+            padding: 6px 10px;
+            border-radius: 6px;
             text-align: center;
+            line-height: 1;
         }
         .ok { background: #dcfce7; color: var(--green); }
         .wait { background: #fef3c7; color: var(--amber); }
@@ -336,7 +357,7 @@
         .item span { color: var(--muted); font-size: 14px; }
         .google-calendar-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
         .google-calendar-sidebar { position: sticky; top: 18px; display: grid; gap: 22px; }
-        .google-calendar-main { min-width: 0; }
+        .google-calendar-main { min-width: 0; max-width: 100%; overflow: hidden; }
         .calendar-create-btn { width: fit-content; min-height: 52px; display: inline-flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 0 22px 0 18px; background: white; box-shadow: 0 2px 7px rgba(24,18,22,.12); font-weight: 900; }
         .calendar-create-btn span { width: 24px; height: 24px; display: grid; place-items: center; color: var(--brand); font-size: 28px; font-weight: 500; line-height: 1; }
         .mini-calendar, .stylist-calendar-list { display: grid; gap: 12px; }
@@ -372,7 +393,7 @@
         .stylist-check.stylist-color-6 { border-color: #0891b2; }
         .stylist-filter input:checked + .stylist-color-6 { background: #0891b2; border-color: #0891b2; }
         .calendar-sidebar-empty { color: var(--muted); font-size: 14px; }
-        .calendar-shell { border: 1px solid var(--line); border-radius: 8px; background: white; overflow: hidden; }
+        .calendar-shell { max-width: 100%; border: 1px solid var(--line); border-radius: 8px; background: white; overflow-x: auto; overflow-y: hidden; }
         .calendar-toolbar { min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
         .calendar-kicker { margin-bottom: 3px; color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; }
         .calendar-view-tabs { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fffafd; }
@@ -382,7 +403,7 @@
         .calendar-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: #f8fbff; }
         .calendar-empty b, .calendar-empty span { display: block; }
         .calendar-empty span { margin-top: 3px; color: var(--muted); font-size: 14px; }
-        .calendar-week { min-width: 920px; display: grid; grid-template-columns: 74px repeat(7, minmax(118px, 1fr)); overflow: auto; }
+        .calendar-week { min-width: 920px; display: grid; grid-template-columns: 74px repeat(7, minmax(118px, 1fr)); }
         .calendar-timezone { min-height: 74px; display: flex; align-items: end; justify-content: center; padding: 0 8px 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 800; }
         .calendar-day-head { min-height: 74px; display: grid; place-items: center; align-content: center; gap: 5px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); }
         .calendar-day-head:last-of-type { border-right: 0; }
@@ -437,7 +458,7 @@
             .topbar-right { justify-content: flex-start; }
             .content { padding: 20px; }
             .calendar-toolbar, .calendar-empty { align-items: flex-start; flex-direction: column; }
-            .calendar-shell { overflow-x: auto; }
+            .calendar-week { min-width: 860px; }
         }
     </style>
 </head>
@@ -445,8 +466,7 @@
     <aside class="sidebar">
         <div class="sidebar-top">
             <a class="brand" href="/consola" title="Secretaria Virtual">
-                <span class="mark">SV</span>
-                <span class="brand-text">Secretaria Virtual</span>
+                <img class="brand-logo" src="/logo.png" alt="Secretaria Virtual">
             </a>
             <button class="sidebar-toggle" type="button" aria-label="Cerrar menu" aria-expanded="true" title="Abrir o cerrar menu">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M10 5v14"/></svg>
@@ -478,6 +498,10 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.38.52.7.9.9.34.18.72.28 1.1.28h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-2 1z"/></svg>
                 <span class="nav-label">Ajustes</span>
             </a>
+            <a class="{{ request()->is('facturacion*') ? 'active' : '' }}" href="/facturacion" title="Facturacion">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></svg>
+                <span class="nav-label">Facturacion</span>
+            </a>
             @if (auth()->user()?->is_super_admin)
                 <a class="{{ request()->is('base-de-datos*') ? 'active' : '' }}" href="/base-de-datos" title="Base de datos">
                     <svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
@@ -491,11 +515,16 @@
             <button class="logout" type="submit" title="Cerrar sesion"><span class="logout-label">Cerrar sesion</span></button>
         </form>
 
-        <div class="plan">
-            <b>Plan Profesional</b>
-            <span>600 minutos de voz, 500 SMS y Google Calendar activo.</span>
-            <div class="progress"><div class="bar"></div></div>
-        </div>
+        @php
+            $sidebarClinic = auth()->user()?->primaryClinic();
+            $sidebarPlan = $sidebarClinic?->plan;
+            $sidebarPlanActive = in_array($sidebarClinic?->subscription_status, ['active', 'trial'], true);
+        @endphp
+        <a class="plan" href="/facturacion" title="Ver facturacion">
+            <b>{{ $sidebarPlan ? 'Plan '.$sidebarPlan->name : 'Plan pendiente' }}</b>
+            <span>{{ $sidebarPlan ? $sidebarPlan->sidebarDescription() : 'Elige un plan para activar facturacion y limites del salon.' }}</span>
+            <div class="progress"><div class="bar" style="width: {{ $sidebarPlanActive ? '100%' : '18%' }};"></div></div>
+        </a>
     </aside>
 
     <div class="main">
@@ -573,6 +602,7 @@
         sidebarToggle?.addEventListener('click', () => {
             setSidebarState(! document.documentElement.classList.contains('sidebar-collapsed'));
         });
+
     </script>
 </body>
 </html>

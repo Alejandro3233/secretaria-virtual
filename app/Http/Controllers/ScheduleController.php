@@ -12,6 +12,7 @@ use App\Services\GoogleCalendarService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class ScheduleController extends Controller
@@ -19,7 +20,10 @@ class ScheduleController extends Controller
     public function index(Request $request, ClinicResolver $clinics, GoogleCalendarService $calendar): View
     {
         $clinic = $clinics->currentOrCreate($request->user());
-        $selectedDate = $request->date('date') ?? now();
+        $timezone = $clinic->localTimezone();
+        $selectedDate = $request->query('date')
+            ? Carbon::parse((string) $request->query('date'), $timezone)
+            : now($timezone);
         $selectedView = in_array($request->query('view'), ['day', 'week', 'month'], true)
             ? $request->query('view')
             : 'week';
@@ -63,7 +67,10 @@ class ScheduleController extends Controller
             $appointmentsQuery = Appointment::query()
                 ->with(['client', 'service', 'stylist'])
                 ->where('clinic_id', $clinic->id)
-                ->whereBetween('starts_at', [$queryStart, $queryEnd])
+                ->whereBetween('starts_at', [
+                    $queryStart->copy()->timezone(config('app.timezone')),
+                    $queryEnd->copy()->timezone(config('app.timezone')),
+                ])
                 ->whereNotIn('status', ['cancelled', 'canceled'])
                 ->orderBy('starts_at');
 
@@ -71,7 +78,11 @@ class ScheduleController extends Controller
                 $appointmentsQuery->whereIn('stylist_id', $selectedStylistIds);
             }
 
-            $appointments = $appointmentsQuery->get();
+            $appointments = $appointmentsQuery->get()
+                ->each(function (Appointment $appointment) use ($timezone): void {
+                    $appointment->starts_at = $appointment->starts_at->copy()->timezone($timezone);
+                    $appointment->ends_at = $appointment->ends_at?->copy()->timezone($timezone);
+                });
         }
 
         $days = collect(range(0, 6))->map(fn (int $day) => $weekStart->copy()->addDays($day));
@@ -82,10 +93,10 @@ class ScheduleController extends Controller
             ? $stylists
             : $stylists->whereIn('id', $selectedStylistIds->all())->values();
         $hours = $appointments->isEmpty()
-            ? range(9, 17)
+            ? range(8, 21)
             : range(
-                max(0, min(9, $appointments->min(fn (Appointment $appointment) => $appointment->starts_at->hour))),
-                min(23, max(17, $appointments->max(fn (Appointment $appointment) => ($appointment->ends_at ?? $appointment->starts_at)->hour)))
+                max(0, min(8, $appointments->min(fn (Appointment $appointment) => $appointment->starts_at->hour))),
+                min(23, max(21, $appointments->max(fn (Appointment $appointment) => ($appointment->ends_at ?? $appointment->starts_at)->hour)))
             );
 
         return view('schedule.index', [
@@ -106,6 +117,7 @@ class ScheduleController extends Controller
             'todayAppointments' => $appointments->filter(fn (Appointment $appointment) => $appointment->starts_at->isToday()),
             'googleAppointments' => $appointments->where('source', 'google_calendar'),
             'googleCalendarError' => $googleCalendarError,
+            'timezone' => $timezone,
         ]);
     }
 
@@ -118,7 +130,40 @@ class ScheduleController extends Controller
             'clients' => $clinic->clients()->orderBy('first_name')->get(),
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
             'stylists' => $clinic->stylists()->where('is_active', true)->orderBy('name')->get(),
+            'timezone' => $clinic->localTimezone(),
         ]);
+    }
+
+    public function clients(Request $request, ClinicResolver $clinics): \Illuminate\Http\JsonResponse
+    {
+        $clinic = $clinics->currentOrCreate($request->user());
+        $query = trim((string) $request->query('q', ''));
+
+        if (Str::length($query) < 2) {
+            return response()->json([]);
+        }
+
+        $clients = Client::query()
+            ->where('clinic_id', $clinic->id)
+            ->where(function ($clientsQuery) use ($query) {
+                $clientsQuery
+                    ->where('first_name', 'like', "%{$query}%")
+                    ->orWhere('last_name', 'like', "%{$query}%")
+                    ->orWhere('phone', 'like', "%{$query}%")
+                    ->orWhere('email', 'like', "%{$query}%");
+            })
+            ->orderBy('first_name')
+            ->limit(8)
+            ->get(['id', 'first_name', 'last_name', 'phone', 'email']);
+
+        return response()->json($clients->map(fn (Client $client): array => [
+            'id' => $client->id,
+            'first_name' => $client->first_name,
+            'last_name' => $client->last_name,
+            'phone' => $client->phone,
+            'email' => $client->email,
+            'label' => trim($client->first_name.' '.$client->last_name),
+        ]));
     }
 
     public function store(Request $request, AppointmentService $appointments, ClinicResolver $clinics): RedirectResponse
@@ -145,7 +190,7 @@ class ScheduleController extends Controller
         $client = $this->resolveClient($clinic, $data);
         $this->abortIfForeignServiceOrStylist($clinic->id, $data);
 
-        $startsAt = Carbon::parse($data['starts_at']);
+        $startsAt = Carbon::parse($data['starts_at'], $clinic->localTimezone());
         $service = ! empty($data['service_id'])
             ? Service::query()->where('clinic_id', $clinic->id)->find($data['service_id'])
             : null;

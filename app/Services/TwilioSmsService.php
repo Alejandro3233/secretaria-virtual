@@ -55,7 +55,7 @@ class TwilioSmsService
             return '+1'.$digits;
         }
 
-        if (strlen($digits) === 11 && str_starts_with($digits, '1')) {
+        if (strlen($digits) >= 11) {
             return '+'.$digits;
         }
 

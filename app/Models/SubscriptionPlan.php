@@ -25,6 +25,28 @@ class SubscriptionPlan extends Model
         'is_active' => 'boolean',
     ];
 
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
+
+    public function sidebarDescription(): string
+    {
+        $voice = $this->monthly_voice_minutes_limit === null
+            ? 'llamadas ilimitadas'
+            : $this->monthly_voice_minutes_limit.' minutos de voz';
+        $sms = $this->monthly_sms_limit === null
+            ? 'SMS ilimitados'
+            : $this->monthly_sms_limit.' SMS';
+
+        $features = collect($this->features ?? []);
+        $extras = $features->contains('google_calendar')
+            ? 'Google Calendar activo'
+            : 'agenda de servicios activa';
+
+        return "{$voice}, {$sms} y {$extras}.";
+    }
+
     public function clinics(): HasMany
     {
         return $this->hasMany(Clinic::class);

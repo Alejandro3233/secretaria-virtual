@@ -9,6 +9,21 @@
 @endsection
 
 @section('content')
+    <section class="card" style="margin-bottom:18px;">
+        <div class="section-title" style="margin-bottom:0;">
+            <div>
+                <span class="subtitle">Salon activo</span>
+                <h2>{{ $clinic?->name ?? 'Salon sin configurar' }}</h2>
+                @if ($clinic?->address)
+                    <span class="subtitle">{{ $clinic->address }}</span>
+                @endif
+            </div>
+            <span class="status {{ in_array($clinic?->subscription_status, ['active', 'trial'], true) ? 'ok' : 'wait' }}">
+                {{ ucfirst($clinic?->subscription_status ?? 'pendiente') }}
+            </span>
+        </div>
+    </section>
+
     <section class="grid-4" aria-label="Resumen operativo">
         <article class="card">
             <div class="metric-label">Citas de hoy</div>
@@ -90,27 +105,27 @@
         </article>
 
         <div style="display:grid;gap:18px;">
-            <article class="card">
+            <article class="card integration-status-bar">
                 <div class="section-title"><h2>Estado de integraciones</h2></div>
                 <div class="item">
                     <div><b>Twilio SMS</b><span>{{ config('services.twilio.from') ? 'Numero configurado para mensajes salientes.' : 'Agrega TWILIO_FROM en .env.' }}</span></div>
-                    <span class="status {{ config('services.twilio.from') ? 'ok' : 'wait' }}">{{ config('services.twilio.from') ? 'Activo' : 'Pendiente' }}</span>
+                    <span class="status integration-status {{ config('services.twilio.from') ? 'ok' : 'wait' }}">{{ config('services.twilio.from') ? 'Activo' : 'Pendiente' }}</span>
                 </div>
                 <div class="item">
                     <div><b>Google Calendar</b><span>{{ $clinic?->google_calendar_summary ?? 'Calendario no conectado.' }}</span></div>
-                    <span class="status {{ $clinic?->google_connected_at ? 'ok' : 'wait' }}">{{ $clinic?->google_connected_at ? 'Activo' : 'Pendiente' }}</span>
+                    <span class="status integration-status {{ $clinic?->google_connected_at ? 'ok' : 'wait' }}">{{ $clinic?->google_connected_at ? 'Activo' : 'Pendiente' }}</span>
                 </div>
                 <div class="item">
                     <div><b>Voz Google TTS</b><span>{{ (config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json') ? 'Voz configurada para la secretaria.' : 'Agrega GOOGLE_TTS_CREDENTIALS en .env.' }}</span></div>
-                    <span class="status {{ (config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json') ? 'ok' : 'wait' }}">{{ (config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json') ? 'Activo' : 'Pendiente' }}</span>
+                    <span class="status integration-status {{ (config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json') ? 'ok' : 'wait' }}">{{ (config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json') ? 'Activo' : 'Pendiente' }}</span>
                 </div>
                 <div class="item">
                     <div><b>Stripe</b><span>{{ $clinic?->plan?->name ? 'Plan '.$clinic->plan->name : 'Plan no asignado.' }}</span></div>
-                    <span class="status {{ in_array($clinic?->subscription_status, ['active', 'trial'], true) ? 'ok' : 'wait' }}">{{ ucfirst($clinic?->subscription_status ?? 'pendiente') }}</span>
+                    <span class="status integration-status {{ in_array($clinic?->subscription_status, ['active', 'trial'], true) ? 'ok' : 'wait' }}">{{ ucfirst($clinic?->subscription_status ?? 'pendiente') }}</span>
                 </div>
                 <div class="item">
                     <div><b>Email</b><span>{{ config('mail.default') === 'log' ? 'Los correos estan guardandose en logs.' : 'Mailer '.config('mail.default').' configurado.' }}</span></div>
-                    <span class="status {{ config('mail.default') === 'log' ? 'wait' : 'ok' }}">{{ config('mail.default') === 'log' ? 'Log' : 'Activo' }}</span>
+                    <span class="status integration-status {{ config('mail.default') === 'log' ? 'wait' : 'ok' }}">{{ config('mail.default') === 'log' ? 'Log' : 'Activo' }}</span>
                 </div>
             </article>
 

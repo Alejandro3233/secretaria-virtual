@@ -107,7 +107,7 @@
         </div>
     </form>
 
-    <form method="POST" action="/citas/{{ $appointment->id }}" class="card" style="margin-top:18px;border-color:#fecaca;" onsubmit="return confirm('Eliminar esta cita?');">
+    <form method="POST" action="/citas/{{ $appointment->id }}" class="card" style="margin-top:18px;border-color:#fecaca;" onsubmit="return confirm('Estas seguro de que quieres eliminar esta cita? Esta accion quitara la cita de la agenda y de Google Calendar si estaba sincronizada.');">
         @csrf
         @method('DELETE')
         <div class="section-title" style="margin-bottom:0;">

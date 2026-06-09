@@ -6,9 +6,10 @@
     <title>Iniciar sesion - Secretaria Virtual</title>
     <style>
         * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #10131a; background: #f6f8fb; }
+        body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; font-family: "OpenAI Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #10131a; background: #f6f8fb; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         .intro { background: #111827; color: white; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; }
-        .brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 900; text-decoration: none; color: white; }
+        .brand { display: flex; align-items: center; gap: 0; font-size: 22px; font-weight: 900; text-decoration: none; color: white; }
+        .brand-logo { width: 190px; max-width: 100%; height: auto; display: block; border-radius: 8px; }
         .mark { width: 36px; height: 36px; border-radius: 8px; background: #ef3340; display: grid; place-items: center; }
         .intro h1 { font-size: clamp(36px, 5vw, 64px); line-height: 1; letter-spacing: 0; margin: 0; }
         .intro p { color: #cbd5e1; font-size: 18px; line-height: 1.55; max-width: 560px; }
@@ -21,10 +22,6 @@
         .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
         .check { display: inline-flex; align-items: center; gap: 8px; color: #647084; }
         .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #c0265a; color: white; font-weight: 900; cursor: pointer; margin-top: 20px; }
-        .google-btn { min-height: 44px; width: 100%; border: 1px solid #dde3ea; border-radius: 6px; background: white; color: #10131a; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 20px; }
-        .google-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: #4285f4; font-weight: 900; border: 1px solid #dde3ea; }
-        .divider { display: flex; align-items: center; gap: 12px; color: #647084; font-weight: 800; font-size: 13px; margin: 20px 0 6px; }
-        .divider::before, .divider::after { content: ""; height: 1px; background: #dde3ea; flex: 1; }
         .link { color: #b91c2a; font-weight: 800; text-decoration: none; }
         .error { margin-top: 8px; color: #b91c2a; font-size: 14px; }
         .notice { margin: 0 0 16px; border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; border-radius: 6px; padding: 12px; font-weight: 800; }
@@ -33,7 +30,7 @@
 </head>
 <body>
     <aside class="intro">
-        <a class="brand" href="/"><span class="mark">SV</span>Secretaria Virtual</a>
+        <a class="brand" href="/"><img class="brand-logo" src="/logo.png" alt="Secretaria Virtual"></a>
         <div>
             <h1>Bienvenido a tu consola de salon</h1>
             <p>Gestiona agenda, estilistas, llamadas, SMS, Google Calendar y pagos desde un solo lugar.</p>
@@ -49,13 +46,6 @@
             @if (session('status'))
                 <div class="notice">{{ session('status') }}</div>
             @endif
-
-            <a class="google-btn" href="/auth/google/redirect">
-                <span class="google-mark">G</span>
-                Continuar con Google
-            </a>
-
-            <div class="divider">o entra con correo</div>
 
             <label for="email">Correo electronico</label>
             <input id="email" name="email" type="email" value="{{ old('email') }}" autocomplete="email" required autofocus>
