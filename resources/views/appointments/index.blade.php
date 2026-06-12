@@ -121,6 +121,7 @@
                         <th>Fecha</th>
                         <th>Cliente</th>
                         <th>Telefono</th>
+                        <th>Estado</th>
                         <th>Estilista</th>
                         <th>Tiempo</th>
                         <th>Recordatorio</th>
@@ -140,6 +141,17 @@
                             $canRemind = ! in_array($appointment->status, ['cancelled', 'canceled'], true) && $clientPhone !== '' && ! str_starts_with($clientPhone, 'google:');
                             $callEnabled = $appointment->reminder_call_enabled ?? false;
                             $smsEnabled = $appointment->reminder_sms_enabled ?? false;
+                            $statusLabel = match ($appointment->status) {
+                                'confirmed' => 'Confirmada',
+                                'pending' => 'Pendiente',
+                                'cancelled', 'canceled' => 'Cancelada',
+                                default => ucfirst((string) $appointment->status),
+                            };
+                            $statusClass = match ($appointment->status) {
+                                'confirmed' => 'ok',
+                                'cancelled', 'canceled' => 'danger',
+                                default => 'wait',
+                            };
                         @endphp
                         <tr>
                             <td>{{ $appointment->starts_at->format('M d, Y') }}<br>{{ $appointment->starts_at->format('g:i A') }}</td>
@@ -148,6 +160,7 @@
                                 {{ $serviceName ?: 'Cita' }}
                             </td>
                             <td>{{ $clientPhoneLabel }}</td>
+                            <td><span class="status {{ $statusClass }}">{{ $statusLabel }}</span></td>
                             <td>{{ $appointment->stylist?->name ?? 'Sin asignar' }}</td>
                             <td>{{ $duration ? $duration.' min' : 'Sin duracion' }}</td>
                             <td>

@@ -187,9 +187,23 @@
                             @php
                                 $stylistAppointments = $appointments->filter(fn ($appointment) => $appointment->stylist_id === $stylist->id);
                             @endphp
-                            <div class="calendar-day-column" style="height: {{ $calendarHeight }}px;">
+                            <div
+                                class="calendar-day-column"
+                                data-drop-column="day"
+                                data-date="{{ $selectedDate->format('Y-m-d') }}"
+                                data-stylist-id="{{ $stylist->id }}"
+                                data-start-hour="{{ $calendarStartHour }}"
+                                data-hour-height="{{ $hourHeight }}"
+                                style="height: {{ $calendarHeight }}px;"
+                            >
                                 @for ($hour = $calendarStartHour; $hour < $calendarEndHour; $hour++)
                                     <div class="calendar-hour-line" style="top: {{ ($hour - $calendarStartHour) * $hourHeight }}px;"></div>
+                                    @foreach ([15, 30, 45] as $minuteMark)
+                                        <div
+                                            class="calendar-quarter-line {{ $minuteMark === 30 ? 'is-half' : '' }}"
+                                            style="top: {{ (($hour - $calendarStartHour) * $hourHeight) + (($minuteMark / 60) * $hourHeight) }}px;"
+                                        ></div>
+                                    @endforeach
                                 @endfor
                                 @foreach ($stylistAppointments as $appointment)
                                     @include('schedule.partials.event', ['appointment' => $appointment, 'calendarStartHour' => $calendarStartHour, 'hourHeight' => $hourHeight])
@@ -199,6 +213,7 @@
                             <div class="calendar-day-column" style="height: {{ $calendarHeight }}px;"></div>
                         @endforelse
                     </div>
+                    <div class="calendar-drag-status" role="status" aria-live="polite" hidden></div>
                 @elseif ($selectedView === 'month')
                     <div class="calendar-month">
                         @foreach (['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'] as $weekday)
@@ -256,4 +271,192 @@
             </section>
         </div>
     </div>
+
+    @if ($selectedView === 'day')
+        <script>
+            (() => {
+                const token = document.querySelector('meta[name="csrf-token"]')?.content;
+                const columns = [...document.querySelectorAll('[data-drop-column="day"]')];
+                const status = document.querySelector('.calendar-drag-status');
+                const preview = document.createElement('div');
+                preview.className = 'calendar-drop-preview';
+                preview.hidden = true;
+                let draggedEvent = null;
+                let clickStart = null;
+
+                const showStatus = (message, type = 'info') => {
+                    if (! status) {
+                        return;
+                    }
+
+                    status.textContent = message;
+                    status.dataset.type = type;
+                    status.hidden = false;
+                    window.clearTimeout(showStatus.timer);
+                    showStatus.timer = window.setTimeout(() => {
+                        status.hidden = true;
+                    }, 3200);
+                };
+
+                const snapMinutes = (value) => Math.max(0, Math.min(1439, Math.round(value / 15) * 15));
+                const previewTop = (minutes, startHour, hourHeight) => ((minutes - (startHour * 60)) / 60) * hourHeight;
+                const formatTime = (minutes) => {
+                    const hour = Math.floor(minutes / 60);
+                    const minute = minutes % 60;
+                    const period = hour >= 12 ? 'PM' : 'AM';
+                    const hour12 = hour % 12 || 12;
+
+                    return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+                };
+                const updatePreview = (column, clientY) => {
+                    if (! draggedEvent) {
+                        return null;
+                    }
+
+                    const rect = column.getBoundingClientRect();
+                    const startHour = Number(column.dataset.startHour);
+                    const hourHeight = Number(column.dataset.hourHeight);
+                    const duration = Number(draggedEvent.dataset.durationMinutes || 60);
+                    const minutes = snapMinutes(startHour * 60 + ((clientY - rect.top) / hourHeight) * 60);
+
+                    preview.style.top = `${previewTop(minutes, startHour, hourHeight)}px`;
+                    preview.style.height = draggedEvent.style.height || `${Math.max(34, (duration / 60) * hourHeight)}px`;
+                    preview.textContent = formatTime(minutes);
+
+                    if (preview.parentElement !== column) {
+                        column.appendChild(preview);
+                    }
+
+                    preview.hidden = false;
+
+                    return { minutes, startHour, hourHeight };
+                };
+                const hidePreview = () => {
+                    preview.hidden = true;
+                    preview.remove();
+                };
+
+                document.querySelectorAll('.calendar-day-view .calendar-event').forEach((event) => {
+                    event.addEventListener('pointerdown', (pointerEvent) => {
+                        clickStart = { x: pointerEvent.clientX, y: pointerEvent.clientY };
+                    });
+
+                    event.addEventListener('click', (clickEvent) => {
+                        if (! clickStart) {
+                            return;
+                        }
+
+                        const distance = Math.hypot(clickEvent.clientX - clickStart.x, clickEvent.clientY - clickStart.y);
+                        if (distance > 6) {
+                            clickEvent.preventDefault();
+                        }
+                    });
+
+                    event.addEventListener('dragstart', (dragEvent) => {
+                        draggedEvent = event;
+                        event.classList.add('is-dragging');
+                        dragEvent.dataTransfer.effectAllowed = 'move';
+                        dragEvent.dataTransfer.setData('text/plain', event.dataset.appointmentId);
+                    });
+
+                    event.addEventListener('dragend', () => {
+                        event.classList.remove('is-dragging');
+                        columns.forEach((column) => column.classList.remove('is-drag-over'));
+                        hidePreview();
+                        draggedEvent = null;
+                    });
+                });
+
+                columns.forEach((column) => {
+                    column.addEventListener('dragover', (dragEvent) => {
+                        if (! draggedEvent) {
+                            return;
+                        }
+
+                        dragEvent.preventDefault();
+                        dragEvent.dataTransfer.dropEffect = 'move';
+                        column.classList.add('is-drag-over');
+                        updatePreview(column, dragEvent.clientY);
+                    });
+
+                    column.addEventListener('dragleave', () => {
+                        column.classList.remove('is-drag-over');
+                        if (preview.parentElement === column) {
+                            hidePreview();
+                        }
+                    });
+
+                    column.addEventListener('drop', async (dropEvent) => {
+                        if (! draggedEvent) {
+                            return;
+                        }
+
+                        dropEvent.preventDefault();
+                        column.classList.remove('is-drag-over');
+
+                        const movedEvent = draggedEvent;
+                        const dropPosition = updatePreview(column, dropEvent.clientY);
+                        const startHour = dropPosition.startHour;
+                        const hourHeight = dropPosition.hourHeight;
+                        const minutes = dropPosition.minutes;
+                        const previousParent = movedEvent.parentElement;
+                        const previousTop = movedEvent.style.top;
+                        const previousText = movedEvent.querySelector('span')?.textContent;
+                        const duration = Number(movedEvent.dataset.durationMinutes || 60);
+
+                        movedEvent.style.top = `${previewTop(minutes, startHour, hourHeight)}px`;
+                        movedEvent.querySelector('span').textContent = `${formatTime(minutes)} - ${formatTime(minutes + duration)}`;
+                        column.appendChild(movedEvent);
+                        hidePreview();
+                        movedEvent.classList.add('is-saving');
+
+                        try {
+                            const response = await fetch(movedEvent.dataset.moveUrl, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json',
+                                    'X-CSRF-TOKEN': token,
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
+                                body: JSON.stringify({
+                                    _method: 'PUT',
+                                    date: column.dataset.date,
+                                    minutes,
+                                    stylist_id: column.dataset.stylistId,
+                                }),
+                            });
+                            const payload = await response.json().catch(() => ({
+                                message: `Laravel respondio ${response.status}. Revisa la consola del servidor.`
+                            }));
+
+                            if (! response.ok) {
+                                throw new Error(payload.message || 'No se pudo mover la cita.');
+                            }
+
+                            if (payload.appointment?.starts_at && payload.appointment?.ends_at && movedEvent.querySelector('span')) {
+                                movedEvent.querySelector('span').textContent = `${payload.appointment.starts_at} - ${payload.appointment.ends_at}`;
+                            }
+
+                            if (payload.appointment?.stylist && movedEvent.querySelector('small')) {
+                                movedEvent.querySelector('small').textContent = `${movedEvent.dataset.clientName} - ${payload.appointment.stylist}`;
+                            }
+
+                            showStatus(payload.message || 'Cita movida correctamente.', 'ok');
+                        } catch (error) {
+                            previousParent.appendChild(movedEvent);
+                            movedEvent.style.top = previousTop;
+                            if (previousText && movedEvent.querySelector('span')) {
+                                movedEvent.querySelector('span').textContent = previousText;
+                            }
+                            showStatus(error.message, 'danger');
+                        } finally {
+                            movedEvent.classList.remove('is-saving');
+                        }
+                    });
+                });
+            })();
+        </script>
+    @endif
 @endsection

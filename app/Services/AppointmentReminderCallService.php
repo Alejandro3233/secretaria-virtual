@@ -39,7 +39,9 @@ class AppointmentReminderCallService
             $query->where('reminder_call_enabled', true);
         }
 
-        return $query->get();
+        return $query->get()
+            ->filter(fn (Appointment $appointment): bool => $appointment->clinic?->notificationEnabled('appointment_reminder_call') ?? true)
+            ->values();
     }
 
     public function dueSmsAppointments()
@@ -63,12 +65,18 @@ class AppointmentReminderCallService
             $query->where('reminder_sms_enabled', true);
         }
 
-        return $query->get();
+        return $query->get()
+            ->filter(fn (Appointment $appointment): bool => $appointment->clinic?->notificationEnabled('appointment_reminder_sms') ?? true)
+            ->values();
     }
 
     public function call(Appointment $appointment): ?string
     {
         $appointment->loadMissing(['clinic', 'client']);
+
+        if (! ($appointment->clinic?->notificationEnabled('appointment_reminder_call') ?? true)) {
+            return null;
+        }
 
         $to = $this->normalizePhone($appointment->client?->phone);
         $from = $this->normalizePhone($appointment->clinic?->twilio_phone_number ?: config('services.twilio.from'));
@@ -152,6 +160,10 @@ class AppointmentReminderCallService
     {
         $appointment->loadMissing(['clinic', 'client']);
 
+        if (! ($appointment->clinic?->notificationEnabled('appointment_reminder_sms') ?? true)) {
+            return null;
+        }
+
         try {
             $sid = $this->sms->send((string) $appointment->client?->phone, $this->smsMessageFor($appointment));
             $this->recordSms($appointment, $sid ? 'sent' : 'failed', $sid, $sid ? null : 'Faltan datos de Twilio o telefono del cliente.');
@@ -170,12 +182,30 @@ class AppointmentReminderCallService
 
     public function tokenFor(Appointment $appointment): string
     {
-        return hash_hmac('sha256', $appointment->id.'|'.$appointment->client_id.'|'.$appointment->starts_at?->timestamp, config('app.key'));
+        return hash_hmac('sha256', $appointment->id.'|'.$appointment->client_id, config('app.key'));
     }
 
     public function validToken(Appointment $appointment, string $token): bool
     {
-        return hash_equals($this->tokenFor($appointment), $token);
+        $legacyToken = hash_hmac('sha256', $appointment->id.'|'.$appointment->client_id.'|'.$appointment->starts_at?->timestamp, config('app.key'));
+
+        return hash_equals($this->tokenFor($appointment), $token)
+            || hash_equals($legacyToken, $token)
+            || $this->tokenWasSentToClient($appointment, $token);
+    }
+
+    private function tokenWasSentToClient(Appointment $appointment, string $token): bool
+    {
+        if (! preg_match('/^[a-f0-9]{64}$/i', $token)) {
+            return false;
+        }
+
+        return DB::table('notifications')
+            ->where('appointment_id', $appointment->id)
+            ->where('client_id', $appointment->client_id)
+            ->whereIn('channel', ['email', 'sms'])
+            ->where('body', 'like', '%'.$token.'%')
+            ->exists();
     }
 
     private function record(Appointment $appointment, string $status, ?string $providerMessageId = null, ?string $error = null): void

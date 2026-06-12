@@ -8,6 +8,56 @@
 @endsection
 
 @section('content')
+    <style>
+        .database-table {
+            width: max-content;
+            min-width: 100%;
+            table-layout: auto;
+        }
+
+        .database-table th,
+        .database-table td {
+            width: 1%;
+            white-space: nowrap;
+        }
+
+        .database-table input {
+            width: auto;
+            min-width: 130px;
+            max-width: 240px;
+        }
+
+        .database-table input[name="email"],
+        .database-table input[name="google_id"],
+        .database-table input[name="avatar_url"],
+        .database-table input[name="new_password"],
+        .database-table input[name="new_password_confirmation"] {
+            min-width: 190px;
+        }
+
+        .database-actions {
+            display: grid;
+            gap: 8px;
+        }
+
+        .database-shell {
+            display: grid;
+            grid-template-columns: 260px minmax(0, 1fr);
+            gap: 14px;
+            align-items: start;
+        }
+
+        .database-tables {
+            align-self: start;
+        }
+
+        @media (max-width: 900px) {
+            .database-shell {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
     @if (session('database_status'))
         <div class="card" style="margin-bottom:18px;border-color:#bbf7d0;background:#f0fdf4;color:#166534;font-weight:800;">
             {{ session('database_status') }}
@@ -20,8 +70,8 @@
         </div>
     @endif
 
-    <section class="grid-2">
-        <aside class="card">
+    <section class="database-shell">
+        <aside class="card database-tables">
             <div class="section-title"><h2>Tablas</h2></div>
             <div style="display:grid;gap:8px;">
                 @foreach ($tables as $tableName)
@@ -39,7 +89,7 @@
                 <span class="subtitle">Mostrando hasta 100 registros</span>
             </div>
 
-            <table>
+            <table class="database-table">
                 <thead>
                     <tr>
                         @foreach ($columns as $column)
@@ -58,7 +108,7 @@
                             <form method="POST" action="/base-de-datos/{{ $table }}/{{ $row->id }}">
                                 @csrf
                                 @foreach ($columns as $column)
-                                    <td style="min-width:160px;">
+                                    <td>
                                         @php($value = $row->{$column})
                                         @if (in_array($column, $lockedColumns, true))
                                             <input value="{{ $column === 'password' && $value ? '********' : $value }}" disabled>
@@ -68,15 +118,27 @@
                                     </td>
                                 @endforeach
                                 @if ($table === 'users')
-                                    <td style="min-width:190px;">
+                                    <td>
                                         <input name="new_password" type="password" placeholder="Dejar vacio para no cambiar">
                                     </td>
-                                    <td style="min-width:190px;">
+                                    <td>
                                         <input name="new_password_confirmation" type="password" placeholder="Repetir nueva contrasena">
                                     </td>
                                 @endif
                                 <td>
-                                    <button class="btn primary" type="submit">Guardar</button>
+                                    <div class="database-actions">
+                                        <button class="btn primary" type="submit">Guardar</button>
+                                    <button
+                                        class="btn"
+                                        type="submit"
+                                        formaction="/base-de-datos/{{ $table }}/{{ $row->id }}/eliminar"
+                                        formmethod="POST"
+                                        onclick="return confirm('Seguro que quieres eliminar este registro de {{ $table }}? Esta accion no se puede deshacer.');"
+                                        style="border-color:#fecaca;color:#991b1b;"
+                                    >
+                                        Eliminar
+                                    </button>
+                                    </div>
                                 </td>
                             </form>
                         </tr>

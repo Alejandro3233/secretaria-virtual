@@ -12,6 +12,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -104,10 +106,62 @@ class RegisteredUserController extends Controller
             $twilioNumbers->assignToClinic($clinic);
         }
 
+        if ($clinic) {
+            $this->sendWelcomeEmail($user, $clinic);
+        }
+
         Auth::login($user);
 
         $request->session()->regenerate();
 
         return redirect()->intended('/consola');
+    }
+
+    private function sendWelcomeEmail(User $user, Clinic $clinic): void
+    {
+        $body = implode("\n", [
+            'Hola '.trim($user->name.' '.($user->last_name ?? '')).',',
+            '',
+            'Bienvenido a Secretaria Virtual.',
+            '',
+            'Tu cuenta fue creada correctamente y el salon '.$clinic->name.' ya esta activo en la plataforma.',
+            '',
+            'Desde tu consola puedes gestionar agenda, clientes, servicios, recordatorios, llamadas, SMS y sincronizacion con Google Calendar.',
+            '',
+            'Para entrar de nuevo, usa este enlace:',
+            url('/login'),
+            '',
+            'Gracias por confiar en Secretaria Virtual.',
+        ]);
+
+        try {
+            Mail::raw($body, function ($message) use ($user, $clinic): void {
+                $message
+                    ->to($user->email)
+                    ->subject('Bienvenido a Secretaria Virtual - '.$clinic->name);
+            });
+
+            DB::table('notifications')->insert([
+                'clinic_id' => $clinic->id,
+                'client_id' => null,
+                'appointment_id' => null,
+                'channel' => 'email',
+                'event' => 'salon_registered',
+                'recipient' => $user->email,
+                'status' => 'sent',
+                'provider_message_id' => null,
+                'body' => $body,
+                'error' => null,
+                'sent_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('No se pudo enviar email de bienvenida al salon.', [
+                'user_id' => $user->id,
+                'clinic_id' => $clinic->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 }

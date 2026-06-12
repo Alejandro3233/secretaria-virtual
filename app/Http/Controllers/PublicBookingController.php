@@ -134,7 +134,7 @@ class PublicBookingController extends Controller
             'stylist_id' => $availableStylist->id,
             'starts_at' => $startsAt,
             'ends_at' => $startsAt->copy()->addMinutes($durationMinutes),
-            'status' => 'confirmed',
+            'status' => 'pending',
             'priority' => 'normal',
             'source' => 'public_booking',
             'reason' => $service?->name ?? 'Reserva publica',
@@ -142,7 +142,7 @@ class PublicBookingController extends Controller
         ]);
 
         return redirect("/salones/{$clinic->id}/reservar")
-            ->with('booking_status', 'Tu cita fue reservada para '.$appointment->starts_at->format('d/m/Y g:i A').'.');
+            ->with('booking_status', 'Tu cita fue creada para '.$appointment->starts_at->format('d/m/Y g:i A').'. Revisa tu correo para confirmarla, modificarla o cancelarla.');
     }
 
     private function selectedService(Clinic $clinic, Request $request, ?Service $fallback): ?Service

@@ -277,6 +277,8 @@ class GoogleCalendarService
                     'status' => 'confirmed',
                     'source' => 'google_calendar',
                     'priority' => 'normal',
+                    'reminder_call_enabled' => false,
+                    'reminder_sms_enabled' => false,
                 ]);
 
                 $imported++;

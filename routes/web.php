@@ -33,6 +33,8 @@ Route::get('/particular', [PublicBookingController::class, 'index'])->name('publ
 Route::get('/salones/{clinic}', [PublicBookingController::class, 'show'])->name('public-bookings.show');
 Route::get('/salones/{clinic}/reservar', [PublicBookingController::class, 'create'])->name('public-bookings.create');
 Route::post('/salones/{clinic}/reservar', [PublicBookingController::class, 'store'])->name('public-bookings.store');
+Route::get('/cita/{appointment}/{token}/confirmar', [PublicRescheduleController::class, 'confirm'])->name('public-appointments.confirm');
+Route::get('/cita/{appointment}/{token}/cancelar', [PublicRescheduleController::class, 'cancel'])->name('public-appointments.cancel');
 Route::get('/reagendar/{appointment}/{token}', [PublicRescheduleController::class, 'show'])->name('public-reschedule.show');
 Route::post('/reagendar/{appointment}/{token}', [PublicRescheduleController::class, 'update'])->name('public-reschedule.update');
 
@@ -55,6 +57,8 @@ Route::get('/agenda', [ScheduleController::class, 'index'])->middleware('auth');
 Route::get('/agenda/nueva-cita', [ScheduleController::class, 'create'])->middleware('auth');
 Route::get('/agenda/clientes/buscar', [ScheduleController::class, 'clients'])->middleware('auth');
 Route::post('/agenda/nueva-cita', [ScheduleController::class, 'store'])->middleware('auth');
+Route::post('/agenda/citas/{appointment}/mover', [ScheduleController::class, 'move'])->middleware('auth');
+Route::put('/agenda/citas/{appointment}/mover', [ScheduleController::class, 'move'])->middleware('auth');
 
 Route::get('/consola', function (Request $request, ClinicResolver $clinics) {
     $clinic = $clinics->currentOrCreate($request->user());
@@ -187,6 +191,20 @@ Route::get('/buscar', function (Request $request) {
 Route::get('/ajustes', function () {
     return view('settings.index');
 })->middleware('auth');
+Route::post('/ajustes/notificaciones', function (Request $request, ClinicResolver $clinics) {
+    $clinic = $clinics->currentOrCreate($request->user());
+    $keys = array_keys(\App\Models\Clinic::DEFAULT_NOTIFICATION_PREFERENCES);
+
+    $preferences = collect($keys)
+        ->mapWithKeys(fn (string $key): array => [$key => $request->boolean($key)])
+        ->all();
+
+    $clinic->forceFill([
+        'notification_preferences' => $preferences,
+    ])->save();
+
+    return redirect('/ajustes#notificaciones')->with('settings_status', 'Preferencias de notificaciones actualizadas.');
+})->middleware('auth');
 
 Route::get('/dashboard', function () {
     return redirect('/consola');
@@ -195,6 +213,7 @@ Route::get('/dashboard', function () {
 Route::middleware('auth')->group(function () {
     Route::get('/base-de-datos/{table?}', [DatabaseAdminController::class, 'index'])->name('database.index');
     Route::post('/base-de-datos/{table}/{id}', [DatabaseAdminController::class, 'update'])->name('database.update');
+    Route::post('/base-de-datos/{table}/{id}/eliminar', [DatabaseAdminController::class, 'destroy'])->name('database.destroy');
 });
 
 Route::middleware('guest')->group(function () {

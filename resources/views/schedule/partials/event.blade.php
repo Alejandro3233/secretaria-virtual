@@ -8,7 +8,16 @@
     $clientName = trim(($appointment->client?->first_name ?? 'Cliente').' '.($appointment->client?->last_name ?? ''));
 @endphp
 
-<a class="calendar-event {{ $sourceClass }}" href="/citas/{{ $appointment->id }}/editar" style="top: {{ $top }}px; height: {{ $height }}px;">
+<a
+    class="calendar-event {{ $sourceClass }}"
+    href="/citas/{{ $appointment->id }}/editar"
+    draggable="true"
+    data-appointment-id="{{ $appointment->id }}"
+    data-client-name="{{ $clientName }}"
+    data-duration-minutes="{{ $durationMinutes }}"
+    data-move-url="/agenda/citas/{{ $appointment->id }}/mover"
+    style="top: {{ $top }}px; height: {{ $height }}px;"
+>
     <b>{{ $appointment->service?->name ?? $appointment->reason ?? 'Cita' }}</b>
     <span>{{ $startsAt->format('g:i A') }} - {{ $endsAt->format('g:i A') }}</span>
     <small>{{ $clientName }} - {{ $appointment->stylist?->name ?? $appointment->chair_station ?? 'Sin asignar' }}</small>

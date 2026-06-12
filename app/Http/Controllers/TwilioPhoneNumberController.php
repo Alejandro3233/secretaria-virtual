@@ -109,16 +109,21 @@ class TwilioPhoneNumberController extends Controller
         $status = 'sent';
         $error = null;
 
-        try {
-            $providerMessageId = $sms->send($appointment->client?->phone, $body);
+        if (! ($appointment->clinic?->notificationEnabled('appointment_reschedule_link_sms') ?? true)) {
+            $status = 'skipped';
+            $error = 'SMS de enlace para reagendar desactivado en ajustes.';
+        } else {
+            try {
+                $providerMessageId = $sms->send($appointment->client?->phone, $body);
 
-            if (! $providerMessageId) {
+                if (! $providerMessageId) {
+                    $status = 'failed';
+                    $error = 'Twilio SMS no esta configurado o el telefono no es valido.';
+                }
+            } catch (\Throwable $exception) {
                 $status = 'failed';
-                $error = 'Twilio SMS no esta configurado o el telefono no es valido.';
+                $error = $exception->getMessage();
             }
-        } catch (\Throwable $exception) {
-            $status = 'failed';
-            $error = $exception->getMessage();
         }
 
         DB::table('notifications')->insert([

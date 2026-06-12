@@ -89,6 +89,22 @@ class DatabaseAdminController extends Controller
         return redirect("/base-de-datos/{$table}")->with('database_status', 'Registro actualizado correctamente.');
     }
 
+    public function destroy(Request $request, string $table, int $id): RedirectResponse
+    {
+        $this->authorizeSuperAdmin($request);
+        $table = $this->resolveTable($table);
+
+        try {
+            $deleted = DB::table($table)->where('id', $id)->delete();
+        } catch (\Throwable $exception) {
+            return redirect("/base-de-datos/{$table}")
+                ->withErrors(['database_delete' => 'No se pudo eliminar el registro. Puede tener datos relacionados en otras tablas.']);
+        }
+
+        return redirect("/base-de-datos/{$table}")
+            ->with('database_status', $deleted ? 'Registro eliminado correctamente.' : 'El registro ya no existe.');
+    }
+
     private function authorizeSuperAdmin(Request $request): void
     {
         abort_unless($request->user()?->is_super_admin, 403);

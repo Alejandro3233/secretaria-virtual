@@ -58,7 +58,7 @@
                 @forelse ($availableSlots as $slot)
                     <label class="slot">
                         <input type="radio" name="slot" value="{{ $slot['value'] }}" required>
-                        <span>{{ $slot['starts_at']->format('g:i A') }} - {{ $slot['stylist']->name }}</span>
+                        <span>{{ $slot['starts_at']->format('g:i A') }} - {{ $slot['stylist']?->name ?? 'Disponible' }}</span>
                     </label>
                 @empty
                     <p class="subtitle">No hay horarios disponibles para esta fecha. Prueba con otro dia.</p>

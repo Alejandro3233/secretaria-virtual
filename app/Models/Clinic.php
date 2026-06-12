@@ -8,6 +8,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Clinic extends Model
 {
+    public const DEFAULT_NOTIFICATION_PREFERENCES = [
+        'appointment_created_sms' => true,
+        'appointment_created_email' => true,
+        'appointment_updated_sms' => true,
+        'appointment_updated_email' => true,
+        'appointment_reminder_sms' => true,
+        'appointment_reminder_call' => true,
+        'appointment_reschedule_link_sms' => true,
+    ];
+
     protected $fillable = [
         'subscription_plan_id',
         'name',
@@ -34,6 +44,7 @@ class Clinic extends Model
         'google_connected_at',
         'google_last_synced_at',
         'google_tts_voice',
+        'notification_preferences',
     ];
 
     protected $casts = [
@@ -44,6 +55,7 @@ class Clinic extends Model
         'google_token_expires_at' => 'datetime',
         'google_connected_at' => 'datetime',
         'google_last_synced_at' => 'datetime',
+        'notification_preferences' => 'array',
     ];
 
     public static function timezoneForCountry(?string $countryCode): string
@@ -66,6 +78,16 @@ class Clinic extends Model
         }
 
         return $timezone;
+    }
+
+    public function notificationPreferences(): array
+    {
+        return array_merge(self::DEFAULT_NOTIFICATION_PREFERENCES, $this->notification_preferences ?? []);
+    }
+
+    public function notificationEnabled(string $key): bool
+    {
+        return (bool) ($this->notificationPreferences()[$key] ?? false);
     }
 
     public function plan(): BelongsTo

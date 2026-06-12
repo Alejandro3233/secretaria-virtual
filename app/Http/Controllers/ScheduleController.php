@@ -9,6 +9,7 @@ use App\Models\Stylist;
 use App\Services\AppointmentService;
 use App\Services\ClinicResolver;
 use App\Services\GoogleCalendarService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -180,7 +181,6 @@ class ScheduleController extends Controller
             'stylist_id' => ['nullable', 'integer', 'exists:stylists,id'],
             'starts_at' => ['required', 'date'],
             'duration_minutes' => ['required', 'integer', 'min:15', 'max:480'],
-            'status' => ['required', 'string', 'in:pending,confirmed'],
             'reason' => ['nullable', 'string', 'max:255'],
             'chair_station' => ['nullable', 'string', 'max:255'],
             'client_comments' => ['nullable', 'string'],
@@ -203,7 +203,7 @@ class ScheduleController extends Controller
             'stylist_id' => $data['stylist_id'] ?? null,
             'starts_at' => $startsAt,
             'ends_at' => $endsAt,
-            'status' => $data['status'],
+            'status' => 'pending',
             'priority' => 'normal',
             'source' => 'web',
             'reason' => $data['reason'] ?? null,
@@ -217,6 +217,83 @@ class ScheduleController extends Controller
             : 'Cita creada. Se sincronizara con Google Calendar cuando haya conexion activa.';
 
         return redirect('/agenda')->with('google_calendar_status', $message);
+    }
+
+    public function move(Request $request, Appointment $appointment, AppointmentService $appointments): JsonResponse
+    {
+        $clinic = $this->appointmentClinic($request, $appointment);
+        $appointment->loadMissing('service');
+
+        $data = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d'],
+            'minutes' => ['required', 'integer', 'min:0', 'max:1439'],
+            'stylist_id' => ['required', 'integer', 'exists:stylists,id'],
+        ]);
+
+        $stylist = Stylist::query()
+            ->where('clinic_id', $clinic->id)
+            ->where('is_active', true)
+            ->findOrFail($data['stylist_id']);
+
+        $timezone = $clinic->localTimezone();
+        $startsAt = Carbon::parse($data['date'], $timezone)
+            ->startOfDay()
+            ->addMinutes((int) $data['minutes']);
+        $durationMinutes = $appointment->ends_at
+            ? max(15, (int) $appointment->starts_at->diffInMinutes($appointment->ends_at))
+            : (int) ($appointment->service?->duration_minutes ?? 60);
+        $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
+
+        $conflict = Appointment::query()
+            ->with('service')
+            ->where('clinic_id', $clinic->id)
+            ->where('stylist_id', $stylist->id)
+            ->where('id', '!=', $appointment->id)
+            ->whereNotIn('status', ['cancelled', 'canceled'])
+            ->whereBetween('starts_at', [
+                $startsAt->copy()->startOfDay()->timezone(config('app.timezone')),
+                $startsAt->copy()->endOfDay()->timezone(config('app.timezone')),
+            ])
+            ->get()
+            ->contains(function (Appointment $existing) use ($startsAt, $endsAt): bool {
+                $existingStart = $existing->starts_at->copy()->timezone($startsAt->getTimezone());
+                $existingEnd = ($existing->ends_at ?? $existing->starts_at->copy()->addMinutes($existing->service?->duration_minutes ?? 60))
+                    ->copy()
+                    ->timezone($startsAt->getTimezone());
+
+                return $existingStart->lessThan($endsAt) && $existingEnd->greaterThan($startsAt);
+            });
+
+        if ($conflict) {
+            return response()->json([
+                'message' => 'Ese horario choca con otra cita del estilista.',
+            ], 422);
+        }
+
+        try {
+            $appointment = $appointments->update($appointment, [
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'stylist_id' => $stylist->id,
+            ])->load(['client', 'service', 'stylist']);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'message' => 'No se pudo mover la cita. Revisa la sincronizacion e intentalo de nuevo.',
+            ], 422);
+        }
+
+        $appointment->starts_at = $appointment->starts_at->copy()->timezone($timezone);
+        $appointment->ends_at = $appointment->ends_at?->copy()->timezone($timezone);
+
+        return response()->json([
+            'message' => 'Cita movida correctamente.',
+            'appointment' => [
+                'id' => $appointment->id,
+                'starts_at' => $appointment->starts_at->format('g:i A'),
+                'ends_at' => $appointment->ends_at?->format('g:i A'),
+                'stylist' => $appointment->stylist?->name,
+            ],
+        ]);
     }
 
     private function resolveClient($clinic, array $data): Client
@@ -256,5 +333,14 @@ class ScheduleController extends Controller
                 404
             );
         }
+    }
+
+    private function appointmentClinic(Request $request, Appointment $appointment)
+    {
+        $clinic = $request->user()->primaryClinic();
+
+        abort_unless($clinic && $appointment->clinic_id === $clinic->id, 404);
+
+        return $clinic;
     }
 }

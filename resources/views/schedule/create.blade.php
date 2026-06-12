@@ -80,12 +80,9 @@
             </div>
 
             <div>
-                <label for="status">Estado</label>
-                <select id="status" name="status">
-                    <option value="confirmed" @selected(old('status', 'confirmed') === 'confirmed')>Confirmada</option>
-                    <option value="pending" @selected(old('status') === 'pending')>Pendiente</option>
-                </select>
-                @error('status') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                <label>Estado inicial</label>
+                <div class="status wait" style="min-height:44px;align-items:center;">Pendiente</div>
+                <span class="subtitle" style="display:block;margin-top:8px;">El cliente podra confirmarla o cancelarla desde el correo.</span>
             </div>
         </section>
 
