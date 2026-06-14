@@ -16,6 +16,8 @@ class Clinic extends Model
         'appointment_reminder_sms' => true,
         'appointment_reminder_call' => true,
         'appointment_reschedule_link_sms' => true,
+        'appointment_reminder_sms_hours_before' => 24,
+        'appointment_reminder_call_hours_before' => 24,
     ];
 
     protected $fillable = [
@@ -88,6 +90,19 @@ class Clinic extends Model
     public function notificationEnabled(string $key): bool
     {
         return (bool) ($this->notificationPreferences()[$key] ?? false);
+    }
+
+    public function reminderHoursBefore(string $channel): int
+    {
+        $key = match ($channel) {
+            'sms' => 'appointment_reminder_sms_hours_before',
+            'call', 'voice' => 'appointment_reminder_call_hours_before',
+            default => null,
+        };
+
+        $hours = $key ? (int) ($this->notificationPreferences()[$key] ?? 24) : 24;
+
+        return min(168, max(1, $hours));
     }
 
     public function plan(): BelongsTo

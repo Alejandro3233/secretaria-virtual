@@ -32,7 +32,18 @@
     @php($smsReminderCount = $notificationAppointments->where('reminder_sms_enabled', true)->count())
     @php($notificationStatus = ($callReminderCount + $smsReminderCount) > 0 ? 'Activas' : 'Sin activar')
     @php($notificationPreferences = $clinic?->notificationPreferences() ?? \App\Models\Clinic::DEFAULT_NOTIFICATION_PREFERENCES)
-    @php($activeNotificationRules = collect($notificationPreferences)->filter()->count())
+    @php($notificationBooleanKeys = [
+        'appointment_created_sms',
+        'appointment_created_email',
+        'appointment_updated_sms',
+        'appointment_updated_email',
+        'appointment_reminder_sms',
+        'appointment_reminder_call',
+        'appointment_reschedule_link_sms',
+    ])
+    @php($activeNotificationRules = collect($notificationBooleanKeys)->filter(fn ($key) => (bool) ($notificationPreferences[$key] ?? false))->count())
+    @php($reminderSmsHoursBefore = (int) ($notificationPreferences['appointment_reminder_sms_hours_before'] ?? 24))
+    @php($reminderCallHoursBefore = (int) ($notificationPreferences['appointment_reminder_call_hours_before'] ?? 24))
     @php($smsNotificationRules = collect([
         $notificationPreferences['appointment_created_sms'] ?? false,
         $notificationPreferences['appointment_updated_sms'] ?? false,
@@ -550,7 +561,7 @@
 
                 <div class="notification-summary">
                     <div class="notification-stat">
-                        <b>{{ $activeNotificationRules }} de {{ count(\App\Models\Clinic::DEFAULT_NOTIFICATION_PREFERENCES) }}</b>
+                        <b>{{ $activeNotificationRules }} de {{ count($notificationBooleanKeys) }}</b>
                         <span>Reglas activas</span>
                     </div>
                     <div class="notification-stat">
@@ -586,6 +597,20 @@
                             </label>
                         </div>
                     @endforeach
+                    <div class="grid-2" style="margin-top:6px;">
+                        <div>
+                            <label for="appointment_reminder_call_hours_before">Llamada recordatorio</label>
+                            <input id="appointment_reminder_call_hours_before" name="appointment_reminder_call_hours_before" type="number" min="1" max="168" value="{{ old('appointment_reminder_call_hours_before', $reminderCallHoursBefore) }}">
+                            <span class="subtitle" style="display:block;margin-top:8px;">Horas antes de la cita. Maximo 72 horas.</span>
+                            @error('appointment_reminder_call_hours_before') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
+                        <div>
+                            <label for="appointment_reminder_sms_hours_before">SMS recordatorio</label>
+                            <input id="appointment_reminder_sms_hours_before" name="appointment_reminder_sms_hours_before" type="number" min="1" max="168" value="{{ old('appointment_reminder_sms_hours_before', $reminderSmsHoursBefore) }}">
+                            <span class="subtitle" style="display:block;margin-top:8px;">Horas antes de la cita. Maximo 72 horas.</span>
+                            @error('appointment_reminder_sms_hours_before') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
+                    </div>
                     <div class="actions" style="justify-content:flex-end;">
                         <button class="btn primary" type="submit">Guardar notificaciones</button>
                     </div>

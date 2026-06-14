@@ -107,12 +107,23 @@ Route::get('/consola', function (Request $request, ClinicResolver $clinics) {
         ->whereIn('status', ['cancelled', 'canceled', 'rescheduled'])
         ->count();
 
-    $upcomingAppointments = $todayAppointments
-        ->filter(fn (Appointment $appointment) => $appointment->starts_at->greaterThanOrEqualTo(now()->subMinutes(15)))
-        ->take(6)
-        ->values();
+    $latestCalls = DB::table('notifications')
+        ->leftJoin('clients', 'notifications.client_id', '=', 'clients.id')
+        ->leftJoin('appointments', 'notifications.appointment_id', '=', 'appointments.id')
+        ->where('notifications.clinic_id', $clinic->id)
+        ->where('notifications.channel', 'voice')
+        ->select(
+            'notifications.*',
+            'clients.first_name',
+            'clients.last_name',
+            'clients.phone as client_phone',
+            'appointments.starts_at as appointment_starts_at',
+        )
+        ->orderByDesc('notifications.created_at')
+        ->limit(10)
+        ->get();
 
-    $latestCalls = DB::table('call_logs')
+    $latestInboundCalls = DB::table('call_logs')
         ->leftJoin('clients', 'call_logs.client_id', '=', 'clients.id')
         ->where('call_logs.clinic_id', $clinic->id)
         ->select('call_logs.*', 'clients.first_name', 'clients.last_name')
@@ -128,8 +139,8 @@ Route::get('/consola', function (Request $request, ClinicResolver $clinics) {
         'resolvedCallsToday' => $resolvedCallsToday,
         'smsToday' => $smsToday,
         'savedSlotsToday' => $savedSlotsToday,
-        'upcomingAppointments' => $upcomingAppointments,
         'latestCalls' => $latestCalls,
+        'latestInboundCalls' => $latestInboundCalls,
     ]);
 })->middleware('auth');
 
@@ -193,11 +204,26 @@ Route::get('/ajustes', function () {
 })->middleware('auth');
 Route::post('/ajustes/notificaciones', function (Request $request, ClinicResolver $clinics) {
     $clinic = $clinics->currentOrCreate($request->user());
-    $keys = array_keys(\App\Models\Clinic::DEFAULT_NOTIFICATION_PREFERENCES);
+    $booleanKeys = [
+        'appointment_created_sms',
+        'appointment_created_email',
+        'appointment_updated_sms',
+        'appointment_updated_email',
+        'appointment_reminder_sms',
+        'appointment_reminder_call',
+        'appointment_reschedule_link_sms',
+    ];
 
-    $preferences = collect($keys)
+    $data = $request->validate([
+        'appointment_reminder_sms_hours_before' => ['required', 'integer', 'min:1', 'max:168'],
+        'appointment_reminder_call_hours_before' => ['required', 'integer', 'min:1', 'max:168'],
+    ]);
+
+    $preferences = collect($booleanKeys)
         ->mapWithKeys(fn (string $key): array => [$key => $request->boolean($key)])
         ->all();
+    $preferences['appointment_reminder_sms_hours_before'] = (int) $data['appointment_reminder_sms_hours_before'];
+    $preferences['appointment_reminder_call_hours_before'] = (int) $data['appointment_reminder_call_hours_before'];
 
     $clinic->forceFill([
         'notification_preferences' => $preferences,

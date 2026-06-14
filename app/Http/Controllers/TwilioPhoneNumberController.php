@@ -39,7 +39,7 @@ class TwilioPhoneNumberController extends Controller
         $to = (string) $request->input('To');
         $callSid = (string) $request->input('CallSid');
 
-        $clinic = $this->findClinicByPhone($to);
+        $clinic = $this->findClinicByPhone($to, $from);
         $client = $clinic ? $this->findClientByPhone($clinic, $from) : null;
         $appointment = $client ? $this->nextAppointment($client) : null;
 
@@ -64,9 +64,9 @@ class TwilioPhoneNumberController extends Controller
             'updated_at' => now(),
         ]);
 
-        $twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-US" voice="alice">'
-            .htmlspecialchars($message, ENT_XML1)
-            .'</Say></Response>';
+        $twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
+            .$this->say($message)
+            .'</Response>';
 
         return response($twiml, 200, ['Content-Type' => 'text/xml']);
     }
@@ -82,9 +82,9 @@ class TwilioPhoneNumberController extends Controller
 
         $twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
             .'<Gather numDigits="1" timeout="8" action="'.htmlspecialchars($action, ENT_XML1).'" method="POST">'
-            .'<Say language="es-US" voice="alice">'.htmlspecialchars($message, ENT_XML1).'</Say>'
+            .$this->say($message)
             .'</Gather>'
-            .'<Say language="es-US" voice="alice">No recibimos ninguna opcion. Gracias.</Say>'
+            .$this->say('No recibimos ninguna opcion. Gracias.')
             .'</Response>';
 
         return response($twiml, 200, ['Content-Type' => 'text/xml']);
@@ -180,7 +180,7 @@ class TwilioPhoneNumberController extends Controller
         return response('OK');
     }
 
-    private function findClinicByPhone(string $phone): ?Clinic
+    private function findClinicByPhone(string $phone, string $callerPhone = ''): ?Clinic
     {
         $normalized = $this->normalizePhone($phone);
 
@@ -188,10 +188,32 @@ class TwilioPhoneNumberController extends Controller
             return null;
         }
 
-        return Clinic::query()
+        $clinic = Clinic::query()
             ->whereNotNull('twilio_phone_number')
             ->get()
             ->first(fn (Clinic $clinic) => $this->samePhone($clinic->twilio_phone_number, $normalized));
+
+        if ($clinic || ! $this->samePhone(config('services.twilio.from'), $normalized)) {
+            return $clinic;
+        }
+
+        $caller = $this->normalizePhone($callerPhone);
+
+        if ($caller === '') {
+            return null;
+        }
+
+        $clinicIds = Client::query()
+            ->whereNotNull('phone')
+            ->get(['clinic_id', 'phone'])
+            ->filter(fn (Client $client) => $this->samePhone($client->phone, $caller))
+            ->pluck('clinic_id')
+            ->unique()
+            ->values();
+
+        return $clinicIds->count() === 1
+            ? Clinic::query()->find($clinicIds->first())
+            : null;
     }
 
     private function findClientByPhone(Clinic $clinic, string $phone): ?Client
@@ -297,10 +319,17 @@ class TwilioPhoneNumberController extends Controller
 
     private function twiml(string $message): Response
     {
-        $twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="es-US" voice="alice">'
-            .htmlspecialchars($message, ENT_XML1)
-            .'</Say></Response>';
+        $twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
+            .$this->say($message)
+            .'</Response>';
 
         return response($twiml, 200, ['Content-Type' => 'text/xml']);
+    }
+
+    private function say(string $message): string
+    {
+        return '<Say language="es-ES" voice="Polly.Conchita">'
+            .htmlspecialchars($message, ENT_XML1)
+            .'</Say>';
     }
 }

@@ -23,7 +23,7 @@ class AppointmentReminderCallService
         $query = Appointment::query()
             ->with(['clinic', 'client', 'service', 'stylist'])
             ->whereNotIn('status', ['cancelled', 'canceled'])
-            ->whereBetween('starts_at', [now()->addHours(23), now()->addHours(25)])
+            ->whereBetween('starts_at', [now(), now()->addHours(169)])
             ->whereHas('client', fn ($query) => $query->whereNotNull('phone'))
             ->whereDoesntHave('client', fn ($query) => $query->where('phone', 'like', 'google:%'))
             ->whereNotExists(function ($query): void {
@@ -41,6 +41,7 @@ class AppointmentReminderCallService
 
         return $query->get()
             ->filter(fn (Appointment $appointment): bool => $appointment->clinic?->notificationEnabled('appointment_reminder_call') ?? true)
+            ->filter(fn (Appointment $appointment): bool => $this->insideReminderWindow($appointment, 'call'))
             ->values();
     }
 
@@ -49,7 +50,7 @@ class AppointmentReminderCallService
         $query = Appointment::query()
             ->with(['clinic', 'client', 'service', 'stylist'])
             ->whereNotIn('status', ['cancelled', 'canceled'])
-            ->whereBetween('starts_at', [now()->addHours(23), now()->addHours(25)])
+            ->whereBetween('starts_at', [now(), now()->addHours(169)])
             ->whereHas('client', fn ($query) => $query->whereNotNull('phone'))
             ->whereDoesntHave('client', fn ($query) => $query->where('phone', 'like', 'google:%'))
             ->whereNotExists(function ($query): void {
@@ -67,7 +68,19 @@ class AppointmentReminderCallService
 
         return $query->get()
             ->filter(fn (Appointment $appointment): bool => $appointment->clinic?->notificationEnabled('appointment_reminder_sms') ?? true)
+            ->filter(fn (Appointment $appointment): bool => $this->insideReminderWindow($appointment, 'sms'))
             ->values();
+    }
+
+    private function insideReminderWindow(Appointment $appointment, string $channel): bool
+    {
+        $hoursBefore = $appointment->clinic?->reminderHoursBefore($channel) ?? 24;
+        $startsAt = $appointment->starts_at;
+
+        return $startsAt->between(
+            now()->addHours($hoursBefore - 1),
+            now()->addHours($hoursBefore + 1),
+        );
     }
 
     public function call(Appointment $appointment): ?string

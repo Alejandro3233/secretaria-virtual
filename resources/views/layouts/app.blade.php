@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Secretaria Virtual')</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -64,17 +66,26 @@
         .brand {
             display: flex;
             align-items: center;
-            gap: 0;
+            gap: 9px;
             min-width: 0;
+            color: white;
         }
         .brand-logo {
-            width: 156px;
-            max-width: 100%;
-            height: auto;
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            object-fit: contain;
             display: block;
-            border-radius: 8px;
         }
-        .brand-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .brand-text {
+            overflow: hidden;
+            color: white;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: -.02em;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .mark {
             width: 30px;
             height: 30px;
@@ -164,7 +175,7 @@
         html.sidebar-collapsed .sidebar { padding: 16px 10px; align-items: center; }
         html.sidebar-collapsed .sidebar-top { width: 100%; justify-content: center; }
         html.sidebar-collapsed .brand { justify-content: center; }
-        html.sidebar-collapsed .brand-logo { width: 38px; height: 38px; object-fit: contain; }
+        html.sidebar-collapsed .brand-logo { width: 38px; height: 38px; flex-basis: 38px; }
         html.sidebar-collapsed .brand-text,
         html.sidebar-collapsed .nav-label,
         html.sidebar-collapsed .nav-sub,
@@ -480,8 +491,9 @@
 <body>
     <aside class="sidebar">
         <div class="sidebar-top">
-            <a class="brand" href="/consola" title="Secretaria Virtual">
-                <img class="brand-logo" src="/logo.png" alt="Secretaria Virtual">
+            <a class="brand" href="/consola" title="Secretary365">
+                <img class="brand-logo" src="/favicon.png" alt="">
+                <span class="brand-text">Secretary365</span>
             </a>
             <button class="sidebar-toggle" type="button" aria-label="Cerrar menu" aria-expanded="true" title="Abrir o cerrar menu">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M10 5v14"/></svg>

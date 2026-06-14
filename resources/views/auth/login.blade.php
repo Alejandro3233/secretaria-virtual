@@ -3,6 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <title>Iniciar sesion - Secretaria Virtual</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +35,7 @@
 </head>
 <body>
     <aside class="intro">
-        <a class="brand" href="/"><img class="brand-logo" src="/logo.png" alt="Secretaria Virtual"></a>
+        <a class="brand" href="/"><img class="brand-logo" src="/logo_blanco.png" alt="Secretaria Virtual"></a>
         <div>
             <h1>Bienvenido a tu consola de salon</h1>
             <p>Gestiona agenda, estilistas, llamadas, SMS, Google Calendar y pagos desde un solo lugar.</p>

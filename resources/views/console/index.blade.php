@@ -50,52 +50,73 @@
     <section class="grid-2" style="margin-top:18px;">
         <article class="card">
             <div class="section-title">
-                <h2>Agenda inmediata</h2>
-                <a class="btn" href="/agenda">Abrir agenda</a>
+                <h2>Historial de llamadas</h2>
+                <a class="btn" href="/citas">Ver citas</a>
             </div>
-            @if ($upcomingAppointments->isEmpty())
+            @if ($latestCalls->isEmpty())
                 <div class="section-title" style="margin-bottom:0;">
                     <div>
-                        <h2>No hay citas proximas hoy</h2>
-                        <span class="subtitle">Las siguientes citas del dia apareceran aqui automaticamente.</span>
+                        <h2>Sin llamadas registradas</h2>
+                        <span class="subtitle">Las llamadas recordatorio apareceran aqui cuando Twilio las procese.</span>
                     </div>
                 </div>
             @else
                 <table>
                     <thead>
                         <tr>
-                            <th>Hora</th>
                             <th>Cliente</th>
-                            <th>Servicio</th>
-                            <th>Estilista</th>
+                            <th>Telefono</th>
+                            <th>Tipo</th>
                             <th>Estado</th>
+                            <th>Fecha</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($upcomingAppointments as $appointment)
-                            @php($duration = $appointment->ends_at ? $appointment->starts_at->diffInMinutes($appointment->ends_at) : null)
+                        @foreach ($latestCalls as $call)
+                            @php
+                                $clientName = trim(($call->first_name ?? '').' '.($call->last_name ?? '')) ?: 'Cliente';
+                                $callLabel = match ($call->event) {
+                                    'appointment_reminder_call' => 'Recordatorio',
+                                    default => ucfirst(str_replace('_', ' ', (string) $call->event)),
+                                };
+                                $statusLabel = match ($call->status) {
+                                    'queued' => 'En cola',
+                                    'sent', 'completed', 'answered' => 'Completada',
+                                    'failed' => 'Fallida',
+                                    'busy' => 'Ocupado',
+                                    'no-answer' => 'Sin respuesta',
+                                    default => ucfirst((string) $call->status),
+                                };
+                                $statusClass = match ($call->status) {
+                                    'sent', 'queued', 'completed', 'answered' => 'ok',
+                                    'failed', 'busy', 'no-answer' => 'danger',
+                                    default => 'wait',
+                                };
+                                $callDate = $call->sent_at ?: $call->created_at;
+                            @endphp
                             <tr>
-                                <td>{{ $appointment->starts_at->format('g:i A') }}</td>
                                 <td>
-                                    {{ trim(($appointment->client?->first_name ?? 'Cliente').' '.($appointment->client?->last_name ?? '')) }}<br>
-                                    <span class="subtitle">{{ $appointment->client?->phone ?? 'Sin telefono' }}</span>
+                                    {{ $clientName }}<br>
+                                    <span class="subtitle">
+                                        @if ($call->appointment_starts_at)
+                                            Cita {{ \Illuminate\Support\Carbon::parse($call->appointment_starts_at)->format('d/m/Y g:i A') }}
+                                        @else
+                                            Sin cita asociada
+                                        @endif
+                                    </span>
                                 </td>
+                                <td>{{ $call->recipient ?: $call->client_phone ?: 'Sin telefono' }}</td>
                                 <td>
-                                    {{ $appointment->service?->name ?? $appointment->reason ?? 'Cita' }}<br>
-                                    <span class="subtitle">{{ $duration ? $duration.' min' : 'Sin duracion' }}</span>
-                                </td>
-                                <td>
-                                    {{ $appointment->stylist?->name ?? 'Sin asignar' }}<br>
-                                    <span class="subtitle">{{ $appointment->chair_station ?? 'Sin estacion' }}</span>
-                                </td>
-                                <td>
-                                    @if ($appointment->status === 'confirmed')
-                                        <span class="status ok">Confirmada</span>
-                                    @elseif (in_array($appointment->status, ['cancelled', 'canceled'], true))
-                                        <span class="status danger">Cancelada</span>
+                                    {{ $callLabel }}<br>
+                                    @if ($call->error)
+                                        <span class="subtitle">{{ \Illuminate\Support\Str::limit($call->error, 46) }}</span>
                                     @else
-                                        <span class="status wait">{{ ucfirst($appointment->status) }}</span>
+                                        <span class="subtitle">{{ $call->provider_message_id ?: 'Sin ID proveedor' }}</span>
                                     @endif
+                                </td>
+                                <td><span class="status {{ $statusClass }}">{{ $statusLabel }}</span></td>
+                                <td>
+                                    {{ \Illuminate\Support\Carbon::parse($callDate)->format('d/m g:i A') }}
                                 </td>
                             </tr>
                         @endforeach
@@ -131,7 +152,7 @@
 
             <article class="card">
                 <div class="section-title"><h2>Ultimas llamadas</h2></div>
-                @forelse ($latestCalls as $call)
+                @forelse ($latestInboundCalls as $call)
                     <div class="item">
                         <div>
                             <b>{{ $call->intent ? ucfirst(str_replace('_', ' ', $call->intent)) : 'Llamada registrada' }}</b>
