@@ -14,7 +14,10 @@ class AppointmentReminderCallService
     public const EVENT = 'appointment_reminder_call';
     public const SMS_EVENT = 'appointment_reminder_sms';
 
-    public function __construct(private readonly TwilioSmsService $sms)
+    public function __construct(
+        private readonly TwilioSmsService $sms,
+        private readonly ?NoraLanguageService $languages = null,
+    )
     {
     }
 
@@ -144,12 +147,77 @@ class AppointmentReminderCallService
         $appointment->loadMissing(['clinic', 'client']);
         $clientName = trim((string) $appointment->client?->first_name) ?: 'cliente';
         $clinicName = $appointment->clinic?->name ?? 'tu salon';
-        $time = $appointment->starts_at
+        $startsAt = $appointment->starts_at
             ->copy()
-            ->timezone($appointment->clinic?->localTimezone() ?: config('app.timezone'))
-            ->format('g:i A');
+            ->timezone($appointment->clinic?->localTimezone() ?: config('app.timezone'));
 
-        return "Hola {$clientName}, te llamamos de {$clinicName} para recordarte que tienes una cita para manana a las {$time}. Si quieres reagendar la cita marca 1.";
+        $languages = $this->languages ?? app(NoraLanguageService::class);
+
+        if ($languages->language($appointment->clinic) === 'es') {
+            return "Hola {$clientName}, soy Nora, la asistente virtual de {$clinicName}. Te estamos llamando para recordarte que tienes una cita con nosotros el ".
+                $startsAt->format('j').' de '.$this->spanishMonth((int) $startsAt->format('n')).' de '.$startsAt->format('Y').
+                ' a las '.$startsAt->format('g').' y '.$startsAt->format('i').' '.$this->spanishPeriod((int) $startsAt->format('H')).
+                '. Si quieres modificar la cita, presiona 1 en tu telefono.';
+        }
+
+        return $languages->text($appointment->clinic, 'reminder', [
+            'name' => $clientName,
+            'clinic' => $clinicName,
+            'datetime' => $languages->dateTime($startsAt, $appointment->clinic),
+        ]);
+    }
+
+    private function spanishMonth(int $month): string
+    {
+        return [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio',
+            7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'][$month];
+    }
+
+    private function spanishPeriod(int $hour): string
+    {
+        return $hour < 12 ? 'de la mañana' : ($hour < 19 ? 'de la tarde' : 'de la noche');
+    }
+
+    private function spokenDateTime(\Carbon\CarbonInterface $date): string
+    {
+        $weekdays = [
+            0 => 'domingo',
+            1 => 'lunes',
+            2 => 'martes',
+            3 => 'miercoles',
+            4 => 'jueves',
+            5 => 'viernes',
+            6 => 'sabado',
+        ];
+        $months = [
+            1 => 'enero',
+            2 => 'febrero',
+            3 => 'marzo',
+            4 => 'abril',
+            5 => 'mayo',
+            6 => 'junio',
+            7 => 'julio',
+            8 => 'agosto',
+            9 => 'septiembre',
+            10 => 'octubre',
+            11 => 'noviembre',
+            12 => 'diciembre',
+        ];
+        $hour24 = (int) $date->format('H');
+        $period = match (true) {
+            $hour24 < 12 => 'de la mañana',
+            $hour24 < 19 => 'de la tarde',
+            default => 'de la noche',
+        };
+
+        return sprintf(
+            'el %s %d de %s a las %s %s',
+            $weekdays[(int) $date->format('w')],
+            (int) $date->format('j'),
+            $months[(int) $date->format('n')],
+            $date->format('g:i'),
+            $period,
+        );
     }
 
     public function smsMessageFor(Appointment $appointment): string
@@ -166,7 +234,7 @@ class AppointmentReminderCallService
             'token' => $this->tokenFor($appointment),
         ]);
 
-        return "Hola {$clientName}, te recordamos que tienes una cita en {$clinicName} manana a las {$time}. Para reagendar: {$rescheduleUrl}";
+        return "Hola {$clientName}, te recordamos que tienes una cita en {$clinicName} mañana a las {$time}. Para reagendar: {$rescheduleUrl}";
     }
 
     public function sendSms(Appointment $appointment): ?string

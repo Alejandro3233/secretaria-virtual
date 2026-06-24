@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -57,5 +58,38 @@ class Appointment extends Model
     public function stylist(): BelongsTo
     {
         return $this->belongsTo(Stylist::class);
+    }
+
+    public function trafficLightClass(?CarbonInterface $reference = null): string
+    {
+        if (in_array($this->status, ['cancelled', 'canceled'], true)) {
+            return 'appointment-cancelled';
+        }
+
+        if ($this->status === 'confirmed') {
+            return 'appointment-confirmed';
+        }
+
+        $reference ??= now($this->starts_at?->getTimezone());
+        $hoursUntilStart = $reference->diffInMinutes($this->starts_at, false) / 60;
+
+        return match (true) {
+            $hoursUntilStart > 24 => 'appointment-pending',
+            $hoursUntilStart > 12 => 'appointment-urgent-light',
+            $hoursUntilStart > 6 => 'appointment-urgent-medium',
+            default => 'appointment-urgent-high',
+        };
+    }
+
+    public function trafficLightLabel(?CarbonInterface $reference = null): string
+    {
+        return match ($this->trafficLightClass($reference)) {
+            'appointment-cancelled' => 'Cita cancelada',
+            'appointment-confirmed' => 'Cita confirmada',
+            'appointment-pending' => 'Pendiente, faltan mas de 24 horas',
+            'appointment-urgent-light' => 'Pendiente, faltan menos de 24 horas',
+            'appointment-urgent-medium' => 'Pendiente, faltan menos de 12 horas',
+            default => 'Pendiente, faltan menos de 6 horas',
+        };
     }
 }

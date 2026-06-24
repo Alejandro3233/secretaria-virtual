@@ -8,11 +8,13 @@ use App\Models\Service;
 use App\Models\Stylist;
 use App\Services\AppointmentService;
 use App\Services\ClinicResolver;
+use App\Services\StylistScheduleService;
 use App\Services\GoogleCalendarService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -62,6 +64,7 @@ class ScheduleController extends Controller
             $stylists = Stylist::query()
                 ->where('clinic_id', $clinic->id)
                 ->where('is_active', true)
+                ->when(! $clinic->google_ever_synced_at, fn ($query) => $query->where('is_internal', false))
                 ->orderBy('name')
                 ->get();
 
@@ -84,6 +87,30 @@ class ScheduleController extends Controller
                     $appointment->starts_at = $appointment->starts_at->copy()->timezone($timezone);
                     $appointment->ends_at = $appointment->ends_at?->copy()->timezone($timezone);
                 });
+
+            $notificationStates = DB::table('notifications')
+                ->whereIn('appointment_id', $appointments->pluck('id'))
+                ->where(function ($query): void {
+                    $query->where(function ($sent): void {
+                        $sent->whereIn('channel', ['sms', 'email'])
+                            ->whereIn('status', ['sent', 'queued']);
+                    })->orWhere('event', 'appointment_client_response');
+                })
+                ->get()
+                ->groupBy('appointment_id');
+
+            $appointments->each(function (Appointment $appointment) use ($notificationStates): void {
+                $notifications = $notificationStates->get($appointment->id, collect());
+                $appointment->setAttribute('notification_sent', $notifications->contains(
+                    fn ($notification) => in_array($notification->channel, ['sms', 'email'], true)
+                        && in_array($notification->status, ['sent', 'queued'], true)
+                ));
+                $appointment->setAttribute('client_responded', $notifications->contains('event', 'appointment_client_response'));
+                $appointment->setAttribute('client_cancelled', $notifications->contains(
+                    fn ($notification) => $notification->event === 'appointment_client_response'
+                        && $notification->body === 'cancel'
+                ));
+            });
         }
 
         $days = collect(range(0, 6))->map(fn (int $day) => $weekStart->copy()->addDays($day));
@@ -130,7 +157,7 @@ class ScheduleController extends Controller
             'clinic' => $clinic,
             'clients' => $clinic->clients()->orderBy('first_name')->get(),
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
-            'stylists' => $clinic->stylists()->where('is_active', true)->orderBy('name')->get(),
+            'stylists' => $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get(),
             'timezone' => $clinic->localTimezone(),
         ]);
     }
@@ -167,7 +194,7 @@ class ScheduleController extends Controller
         ]));
     }
 
-    public function store(Request $request, AppointmentService $appointments, ClinicResolver $clinics): RedirectResponse
+    public function store(Request $request, AppointmentService $appointments, ClinicResolver $clinics, StylistScheduleService $schedules): RedirectResponse
     {
         $clinic = $clinics->currentOrCreate($request->user());
 
@@ -187,7 +214,6 @@ class ScheduleController extends Controller
             'internal_notes' => ['nullable', 'string'],
         ]);
 
-        $client = $this->resolveClient($clinic, $data);
         $this->abortIfForeignServiceOrStylist($clinic->id, $data);
 
         $startsAt = Carbon::parse($data['starts_at'], $clinic->localTimezone());
@@ -196,6 +222,15 @@ class ScheduleController extends Controller
             : null;
         $durationMinutes = $service?->duration_minutes ?? (int) $data['duration_minutes'];
         $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
+        $stylist = ! empty($data['stylist_id'])
+            ? Stylist::query()->where('clinic_id', $clinic->id)->findOrFail($data['stylist_id'])
+            : null;
+
+        if ($stylist && ($scheduleError = $schedules->validationMessage($stylist, $startsAt, $endsAt))) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['starts_at' => $scheduleError]);
+        }
+
+        $client = $this->resolveClient($clinic, $data);
 
         $appointment = $appointments->create($clinic, [
             'client_id' => $client->id,
@@ -219,21 +254,23 @@ class ScheduleController extends Controller
         return redirect('/agenda')->with('google_calendar_status', $message);
     }
 
-    public function move(Request $request, Appointment $appointment, AppointmentService $appointments): JsonResponse
+    public function move(Request $request, Appointment $appointment, AppointmentService $appointments, StylistScheduleService $schedules): JsonResponse
     {
         $clinic = $this->appointmentClinic($request, $appointment);
         $appointment->loadMissing('service');
 
         $data = $request->validate([
             'date' => ['required', 'date_format:Y-m-d'],
-            'minutes' => ['required', 'integer', 'min:0', 'max:1439'],
-            'stylist_id' => ['required', 'integer', 'exists:stylists,id'],
+            'minutes' => ['required', 'integer', 'min:0', 'max:1439', 'multiple_of:5'],
+            'stylist_id' => ['nullable', 'integer', 'exists:stylists,id'],
         ]);
 
-        $stylist = Stylist::query()
-            ->where('clinic_id', $clinic->id)
-            ->where('is_active', true)
-            ->findOrFail($data['stylist_id']);
+        $stylist = ! empty($data['stylist_id'])
+            ? Stylist::query()
+                ->where('clinic_id', $clinic->id)
+                ->where('is_active', true)
+                ->findOrFail($data['stylist_id'])
+            : null;
 
         $timezone = $clinic->localTimezone();
         $startsAt = Carbon::parse($data['date'], $timezone)
@@ -244,10 +281,14 @@ class ScheduleController extends Controller
             : (int) ($appointment->service?->duration_minutes ?? 60);
         $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
 
+        if ($stylist && ($scheduleError = $schedules->validationMessage($stylist, $startsAt, $endsAt))) {
+            return response()->json(['message' => $scheduleError], 422);
+        }
+
         $conflict = Appointment::query()
             ->with('service')
             ->where('clinic_id', $clinic->id)
-            ->where('stylist_id', $stylist->id)
+            ->where('stylist_id', $stylist?->id)
             ->where('id', '!=', $appointment->id)
             ->whereNotIn('status', ['cancelled', 'canceled'])
             ->whereBetween('starts_at', [
@@ -274,7 +315,7 @@ class ScheduleController extends Controller
             $appointment = $appointments->update($appointment, [
                 'starts_at' => $startsAt,
                 'ends_at' => $endsAt,
-                'stylist_id' => $stylist->id,
+                'stylist_id' => $stylist?->id,
             ])->load(['client', 'service', 'stylist']);
         } catch (\Throwable $exception) {
             return response()->json([
@@ -290,8 +331,12 @@ class ScheduleController extends Controller
             'appointment' => [
                 'id' => $appointment->id,
                 'starts_at' => $appointment->starts_at->format('g:i A'),
+                'starts_at_iso' => $appointment->starts_at->toIso8601String(),
                 'ends_at' => $appointment->ends_at?->format('g:i A'),
+                'ends_at_iso' => $appointment->ends_at?->toIso8601String(),
                 'stylist' => $appointment->stylist?->name,
+                'traffic_class' => $appointment->trafficLightClass(),
+                'traffic_label' => $appointment->trafficLightLabel(),
             ],
         ]);
     }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <title>@yield('title', 'Reservar cita - Secretaria Virtual')</title>
+    <title>@yield('title', 'Reservar cita - Secretary365')</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -43,6 +43,7 @@
         .slot span { min-height: 42px; display: grid; place-items: center; border: 1px solid #dde3ea; border-radius: 6px; background: white; font-weight: 900; cursor: pointer; }
         .slot input:checked + span { background: #c0265a; border-color: #c0265a; color: white; }
         section { margin-bottom: 18px; }
+        @yield('page-styles')
         @media (max-width: 760px) {
             .nav { align-items: flex-start; flex-direction: column; padding: 14px 0; }
             .grid-2, .grid-3 { grid-template-columns: 1fr; }
@@ -54,7 +55,7 @@
 <body>
     <header class="topbar">
         <div class="wrap nav">
-            <a href="/"><img class="brand-logo" src="/logo.png" alt="Secretaria Virtual"></a>
+            <a href="/" aria-label="Secretary365, inicio"><img class="brand-logo" src="/logo-home-v2.png" alt="Secretary365"></a>
             <div class="actions">
                 <a class="btn" href="/particular">Buscar salon</a>
                 <a class="btn" href="/login">Soy salon</a>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Clinic;
 use App\Models\SubscriptionPlan;
+use App\Services\BillingInvoiceEmailService;
 use App\Services\StripeCheckoutService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -71,6 +72,7 @@ class StripeSubscriptionController extends Controller
         match ($event['type'] ?? '') {
             'checkout.session.completed' => $this->handleCheckoutCompleted($event['data']['object'] ?? []),
             'customer.subscription.updated', 'customer.subscription.deleted' => $this->handleSubscriptionChanged($event['data']['object'] ?? []),
+            'invoice.paid', 'invoice.payment_succeeded' => $this->handleInvoicePaid($event['data']['object'] ?? []),
             default => null,
         };
 
@@ -121,6 +123,11 @@ class StripeSubscriptionController extends Controller
                     : null,
                 'updated_at' => now(),
             ]);
+    }
+
+    private function handleInvoicePaid(array $invoice): void
+    {
+        app(BillingInvoiceEmailService::class)->sendForPaidInvoice($invoice);
     }
 
     private function validSignature(string $payload, string $signatureHeader): bool

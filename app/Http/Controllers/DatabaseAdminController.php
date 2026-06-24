@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,7 +12,7 @@ use Illuminate\View\View;
 
 class DatabaseAdminController extends Controller
 {
-    private const TABLES = [
+    private const EDITABLE_TABLES = [
         'users',
         'subscription_plans',
         'clinics',
@@ -38,18 +39,26 @@ class DatabaseAdminController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        $table = $this->resolveTable($table);
+        $tables = $this->tables();
+        $table = $this->resolveTable($table, $tables);
         $columns = Schema::getColumnListing($table);
-        $rows = DB::table($table)->orderBy('id')->limit(100)->get();
-        $counts = collect(self::TABLES)->mapWithKeys(fn (string $name) => [$name => DB::table($name)->count()]);
+        $query = DB::table($table);
+
+        if ($columns !== []) {
+            $query->orderBy(in_array('id', $columns, true) ? 'id' : $columns[0]);
+        }
+
+        $rows = $query->limit(100)->get();
+        $counts = $tables->mapWithKeys(fn (string $name) => [$name => DB::table($name)->count()]);
 
         return view('database.index', [
-            'tables' => self::TABLES,
+            'tables' => $tables,
             'table' => $table,
             'columns' => $columns,
             'rows' => $rows,
             'counts' => $counts,
             'lockedColumns' => self::LOCKED_COLUMNS,
+            'isEditable' => in_array($table, self::EDITABLE_TABLES, true),
         ]);
     }
 
@@ -57,6 +66,7 @@ class DatabaseAdminController extends Controller
     {
         $this->authorizeSuperAdmin($request);
         $table = $this->resolveTable($table);
+        abort_unless(in_array($table, self::EDITABLE_TABLES, true), 403);
 
         $columns = collect(Schema::getColumnListing($table))
             ->reject(fn (string $column) => in_array($column, self::LOCKED_COLUMNS, true));
@@ -93,6 +103,34 @@ class DatabaseAdminController extends Controller
     {
         $this->authorizeSuperAdmin($request);
         $table = $this->resolveTable($table);
+        abort_unless(in_array($table, self::EDITABLE_TABLES, true), 403);
+
+        if ($table === 'users') {
+            $user = User::query()->findOrFail($id);
+
+            if ($request->user()->is($user)) {
+                return redirect('/base-de-datos/users')->withErrors([
+                    'database_delete' => 'No puedes eliminar tu propia cuenta.',
+                ]);
+            }
+
+            if ($user->is_super_admin && User::query()->where('is_super_admin', true)->where('is_active', true)->count() <= 1) {
+                return redirect('/base-de-datos/users')->withErrors([
+                    'database_delete' => 'No puedes eliminar al último superadministrador activo.',
+                ]);
+            }
+
+            DB::transaction(function () use ($user): void {
+                $user->forceFill(['is_active' => false])->save();
+                DB::table('sessions')->where('user_id', $user->id)->delete();
+                $user->delete();
+            });
+
+            return redirect('/gestion-usuarios?estado=historial')->with(
+                'user_status',
+                'Usuario guardado en el historial sin eliminar sus datos.',
+            );
+        }
 
         try {
             $deleted = DB::table($table)->where('id', $id)->delete();
@@ -110,11 +148,27 @@ class DatabaseAdminController extends Controller
         abort_unless($request->user()?->is_super_admin, 403);
     }
 
-    private function resolveTable(?string $table): string
+    private function tables(): \Illuminate\Support\Collection
     {
-        $table = $table ?: self::TABLES[0];
+        return collect(Schema::getTableListing())
+            ->map(fn (string $name) => str_contains($name, '.') ? substr($name, strrpos($name, '.') + 1) : $name)
+            ->reject(fn (string $name) => str_starts_with($name, 'sqlite_'))
+            ->unique()
+            ->sortBy(fn (string $name) => sprintf(
+                '%d-%03d-%s',
+                in_array($name, self::EDITABLE_TABLES, true) ? 0 : 1,
+                array_search($name, self::EDITABLE_TABLES, true) ?: 0,
+                $name,
+            ))
+            ->values();
+    }
 
-        abort_unless(in_array($table, self::TABLES, true), 404);
+    private function resolveTable(?string $table, ?\Illuminate\Support\Collection $tables = null): string
+    {
+        $tables ??= $this->tables();
+        $table = $table ?: $tables->first();
+
+        abort_unless(is_string($table) && $tables->containsStrict($table), 404);
 
         return $table;
     }

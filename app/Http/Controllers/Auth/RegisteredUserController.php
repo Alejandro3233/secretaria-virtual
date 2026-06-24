@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Clinic;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
-use App\Services\GoogleTextToSpeechService;
+use App\Services\CallForwardingOnboardingService;
 use App\Services\TwilioPhoneNumberService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +25,7 @@ class RegisteredUserController extends Controller
         return view('auth.register');
     }
 
-    public function store(Request $request, TwilioPhoneNumberService $twilioNumbers): RedirectResponse
+    public function store(Request $request, TwilioPhoneNumberService $twilioNumbers, CallForwardingOnboardingService $onboarding): RedirectResponse
     {
         $usersHasLastName = Schema::hasColumn('users', 'last_name');
         $usersHasMobilePhone = Schema::hasColumn('users', 'mobile_phone');
@@ -63,6 +63,7 @@ class RegisteredUserController extends Controller
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => $data['password'],
+                'is_active' => true,
             ];
 
             if ($usersHasLastName) {
@@ -88,7 +89,10 @@ class RegisteredUserController extends Controller
                 'email' => $data['email'],
                 'address' => $data['clinic_address'],
                 'subscription_status' => 'trial',
-                'google_tts_voice' => GoogleTextToSpeechService::TWILIO_VOICE_ID,
+                'google_tts_voice' => 'twilio-google-es-us-neural2-a',
+                'notification_preferences' => [
+                    'nora_language' => 'es',
+                ],
             ]);
 
             DB::table('clinic_users')->insert([
@@ -114,7 +118,7 @@ class RegisteredUserController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended('/consola');
+        return redirect()->intended($onboarding->destinationFor($user));
     }
 
     private function sendWelcomeEmail(User $user, Clinic $clinic): void
@@ -133,12 +137,17 @@ class RegisteredUserController extends Controller
             '',
             'Gracias por confiar en Secretaria Virtual.',
         ]);
+        $html = $this->welcomeEmailHtml($user, $clinic);
 
         try {
-            Mail::raw($body, function ($message) use ($user, $clinic): void {
+            Mail::send([], [], function ($message) use ($body, $html, $user, $clinic): void {
                 $message
                     ->to($user->email)
                     ->subject('Bienvenido a Secretaria Virtual - '.$clinic->name);
+
+                $message->getSymfonyMessage()
+                    ->html($html)
+                    ->text($body);
             });
 
             DB::table('notifications')->insert([
@@ -163,5 +172,82 @@ class RegisteredUserController extends Controller
                 'error' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function welcomeEmailHtml(User $user, Clinic $clinic): string
+    {
+        $fullName = trim($user->name.' '.($user->last_name ?? '')) ?: 'cliente';
+        $appName = config('app.name') === 'Laravel' ? 'Secretaria Virtual' : (string) config('app.name');
+        $loginUrl = url('/login');
+        $consoleUrl = url('/consola');
+
+        return '<!doctype html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenido a Secretaria Virtual</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f7fb;color:#1f2937;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7fb;padding:28px 12px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e8ecf2;border-radius:8px;overflow:hidden;">
+                    <tr>
+                        <td style="background:#111827;padding:30px;color:#ffffff;">
+                            <div style="font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#f9c7d8;">'.$this->escape($appName).'</div>
+                            <h1 style="margin:10px 0 0;font-size:28px;line-height:1.25;font-weight:900;">Tu cuenta ya esta lista</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:30px;">
+                            <p style="margin:0 0 16px;font-size:16px;line-height:1.55;">Hola <strong>'.$this->escape($fullName).'</strong>,</p>
+                            <p style="margin:0 0 22px;font-size:16px;line-height:1.55;">Bienvenido a Secretaria Virtual. Tu salon <strong>'.$this->escape($clinic->name).'</strong> fue activado correctamente y ya puedes empezar a gestionar tu operacion desde la consola.</p>
+
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e5e7eb;border-radius:8px;margin:0 0 22px;">
+                                <tr>
+                                    <td style="padding:16px 18px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:13px;font-weight:800;text-transform:uppercase;">Salon</td>
+                                    <td align="right" style="padding:16px 18px;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:900;">'.$this->escape($clinic->name).'</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 18px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:13px;font-weight:800;text-transform:uppercase;">Correo</td>
+                                    <td align="right" style="padding:16px 18px;border-bottom:1px solid #e5e7eb;font-size:15px;font-weight:900;">'.$this->escape($user->email).'</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:16px 18px;color:#6b7280;font-size:13px;font-weight:800;text-transform:uppercase;">Estado</td>
+                                    <td align="right" style="padding:16px 18px;font-size:15px;font-weight:900;color:#166534;">Activo</td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td style="padding:4px 0 22px;">
+                                        <a href="'.$this->escape($consoleUrl).'" style="display:inline-block;background:#c0265a;color:#ffffff;text-decoration:none;font-weight:800;border-radius:6px;padding:13px 18px;">Abrir consola</a>
+                                        <a href="'.$this->escape($loginUrl).'" style="display:inline-block;margin-left:8px;background:#ffffff;color:#111827;text-decoration:none;font-weight:800;border:1px solid #d1d5db;border-radius:6px;padding:12px 17px;">Iniciar sesion</a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:16px 18px;color:#475569;font-size:14px;line-height:1.55;">
+                                Desde tu consola puedes gestionar agenda, clientes, servicios, recordatorios, llamadas, SMS y sincronizacion con Google Calendar.
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:20px 30px;background:#fbfcfe;border-top:1px solid #edf0f5;color:#6b7280;font-size:13px;line-height:1.5;">
+                            Gracias por confiar en <strong style="color:#374151;">'.$this->escape($appName).'</strong>.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>';
+    }
+
+    private function escape(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
     }
 }

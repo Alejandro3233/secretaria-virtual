@@ -16,6 +16,16 @@
 @endsection
 
 @section('content')
+    <style>
+        .move-confirmation[hidden] { display: none; }
+        .move-confirmation { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: rgba(24,18,22,.62); }
+        .move-confirmation-card { width: min(430px, 100%); border-radius: 10px; padding: 28px; background: white; box-shadow: 0 24px 70px rgba(0,0,0,.28); text-align: center; }
+        .move-confirmation-card h2 { font-size: 24px; line-height: 1.25; }
+        .move-confirmation-card p { margin: 12px 0 22px; color: var(--muted); line-height: 1.55; }
+        .move-confirmation-actions { display: grid; gap: 10px; }
+        .move-confirmation-actions .btn { min-height: 44px; }
+        .calendar-nonworking-hours { position: absolute; left: 0; right: 0; z-index: 0; background: #e5e7eb; pointer-events: none; }
+    </style>
     @php
         $calendarStartHour = collect($hours)->min() ?? 9;
         $calendarEndHour = (collect($hours)->max() ?? 17) + 1;
@@ -110,11 +120,12 @@
                     @php
                         $stylistColorClass = 'stylist-color-'.(($loop->index % 6) + 1);
                         $isChecked = $selectedStylistIds->isEmpty() || $selectedStylistIds->contains($stylist->id);
+                        $stylistDisplayName = $stylist->is_internal && ! $clinic->google_connected_at ? 'Google (desconectado)' : $stylist->name;
                     @endphp
                     <label class="stylist-filter">
                         <input type="checkbox" name="stylists[]" value="{{ $stylist->id }}" onchange="this.form.submit()" @checked($isChecked)>
                         <span class="stylist-check {{ $stylistColorClass }}"></span>
-                        <span>{{ $stylist->name }}</span>
+                        <span>{{ $stylistDisplayName }}</span>
                     </label>
                 @empty
                     <div class="calendar-sidebar-empty">No hay estilistas activos.</div>
@@ -144,29 +155,17 @@
                     </div>
                 </div>
 
-                @if ($appointments->isEmpty())
-                    <div class="calendar-empty">
-                        <div>
-                            <b>No hay citas en esta vista</b>
-                            <span>Sincroniza Google Calendar, cambia el dia o ajusta los estilistas seleccionados.</span>
-                        </div>
-                        @if ($clinic?->google_connected_at)
-                            <form method="POST" action="/google-calendar/sync">
-                                @csrf
-                                <button class="btn primary" type="submit">Sincronizar ahora</button>
-                            </form>
-                        @endif
-                    </div>
-                @endif
-
                 @if ($selectedView === 'day')
                     <div class="calendar-week calendar-day-view" style="grid-template-columns: 74px repeat({{ max(1, $visibleStylists->count()) }}, minmax(160px, 1fr));">
                         <div class="calendar-timezone">GMT{{ now($timezone)->format('P') }}</div>
                         @forelse ($visibleStylists as $stylist)
+                            @php
+                                $stylistDisplayName = $stylist->is_internal && ! $clinic->google_connected_at ? 'Google (desconectado)' : $stylist->name;
+                            @endphp
                             <div class="calendar-day-head">
                                 <span>Estilista</span>
-                                <b title="{{ $stylist->name }}">{{ substr($stylist->name, 0, 1) }}</b>
-                                <small>{{ $stylist->name }}</small>
+                                <b title="{{ $stylistDisplayName }}">{{ substr($stylist->name, 0, 1) }}</b>
+                                <small>{{ $stylistDisplayName }}</small>
                             </div>
                         @empty
                             <div class="calendar-day-head">
@@ -186,6 +185,16 @@
                         @forelse ($visibleStylists as $stylist)
                             @php
                                 $stylistAppointments = $appointments->filter(fn ($appointment) => $appointment->stylist_id === $stylist->id);
+                                $stylistWorkDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+                                $stylistWorksToday = in_array(strtolower($selectedDate->englishDayOfWeek), $stylistWorkDays, true);
+                                [$workStartHour, $workStartMinute] = array_pad(array_map('intval', explode(':', $stylist->work_starts_at ?: '08:00')), 2, 0);
+                                [$workEndHour, $workEndMinute] = array_pad(array_map('intval', explode(':', $stylist->work_ends_at ?: '21:00')), 2, 0);
+                                $calendarStartMinutes = $calendarStartHour * 60;
+                                $calendarEndMinutes = $calendarEndHour * 60;
+                                $workStartMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($workStartHour * 60) + $workStartMinute));
+                                $workEndMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($workEndHour * 60) + $workEndMinute));
+                                $beforeWorkHeight = (($workStartMinutes - $calendarStartMinutes) / 60) * $hourHeight;
+                                $afterWorkTop = (($workEndMinutes - $calendarStartMinutes) / 60) * $hourHeight;
                             @endphp
                             <div
                                 class="calendar-day-column"
@@ -196,6 +205,16 @@
                                 data-hour-height="{{ $hourHeight }}"
                                 style="height: {{ $calendarHeight }}px;"
                             >
+                                @if (! $stylistWorksToday)
+                                    <div class="calendar-nonworking-hours" style="top:0;height:{{ $calendarHeight }}px;"></div>
+                                @else
+                                    @if ($beforeWorkHeight > 0)
+                                        <div class="calendar-nonworking-hours" style="top:0;height:{{ $beforeWorkHeight }}px;"></div>
+                                    @endif
+                                    @if ($afterWorkTop < $calendarHeight)
+                                        <div class="calendar-nonworking-hours" style="top:{{ $afterWorkTop }}px;height:{{ $calendarHeight - $afterWorkTop }}px;"></div>
+                                    @endif
+                                @endif
                                 @for ($hour = $calendarStartHour; $hour < $calendarEndHour; $hour++)
                                     <div class="calendar-hour-line" style="top: {{ ($hour - $calendarStartHour) * $hourHeight }}px;"></div>
                                     @foreach ([15, 30, 45] as $minuteMark)
@@ -213,7 +232,6 @@
                             <div class="calendar-day-column" style="height: {{ $calendarHeight }}px;"></div>
                         @endforelse
                     </div>
-                    <div class="calendar-drag-status" role="status" aria-live="polite" hidden></div>
                 @elseif ($selectedView === 'month')
                     <div class="calendar-month">
                         @foreach (['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'] as $weekday)
@@ -226,7 +244,26 @@
                             <a class="calendar-month-day {{ ! $monthDay->isSameMonth($selectedDate) ? 'is-muted' : '' }} {{ $monthDay->isToday() ? 'is-today' : '' }}" href="/agenda?{{ http_build_query(['date' => $monthDay->format('Y-m-d'), 'view' => 'day', 'stylists' => $selectedStylistQuery]) }}">
                                 <b>{{ $monthDay->format('j') }}</b>
                                 @foreach ($dayAppointments->take(3) as $appointment)
-                                    <span>{{ $appointment->starts_at->format('g:i') }} {{ $appointment->service?->name ?? $appointment->reason ?? 'Cita' }}</span>
+                                    @php
+                                        $monthAppointmentEnd = $appointment->ends_at
+                                            ?? $appointment->starts_at->copy()->addMinutes($appointment->service?->duration_minutes ?? 60);
+                                    @endphp
+                                    <span class="calendar-month-event {{ $appointment->trafficLightClass() }} {{ $monthAppointmentEnd->isPast() ? 'is-past' : '' }}" title="{{ $appointment->trafficLightLabel() }}">
+                                        @if ($appointment->source === 'google_calendar')
+                                            <img class="appointment-google-badge" src="/google-g.svg" alt="" title="Importada desde Google Calendar">
+                                        @endif
+                                        {{ $appointment->starts_at->format('g:i') }} {{ $appointment->service?->name ?? $appointment->reason ?? 'Cita' }}
+                                        @if (in_array($appointment->status, ['cancelled', 'canceled'], true))
+                                            <i class="appointment-cancel-mark" title="Cita cancelada">&times;</i>
+                                            @if ($appointment->client_cancelled)
+                                                <i class="appointment-delivery responded" title="Cancelada por el cliente">&#10003;&#10003;</i>
+                                            @endif
+                                        @elseif ($appointment->client_responded)
+                                            <i class="appointment-delivery responded" title="El cliente respondio">&#10003;&#10003;</i>
+                                        @elseif ($appointment->notification_sent)
+                                            <i class="appointment-delivery sent" title="SMS o correo enviado">&#10003;</i>
+                                        @endif
+                                    </span>
                                 @endforeach
                                 @if ($dayAppointments->count() > 3)
                                     <small>+{{ $dayAppointments->count() - 3 }} mas</small>
@@ -256,7 +293,14 @@
                             @php
                                 $dayAppointments = $appointments->filter(fn ($appointment) => $appointment->starts_at->isSameDay($day));
                             @endphp
-                            <div class="calendar-day-column" style="height: {{ $calendarHeight }}px;">
+                            <div
+                                class="calendar-day-column"
+                                data-drop-column="week"
+                                data-date="{{ $day->format('Y-m-d') }}"
+                                data-start-hour="{{ $calendarStartHour }}"
+                                data-hour-height="{{ $hourHeight }}"
+                                style="height: {{ $calendarHeight }}px;"
+                            >
                                 @for ($hour = $calendarStartHour; $hour < $calendarEndHour; $hour++)
                                     <div class="calendar-hour-line" style="top: {{ ($hour - $calendarStartHour) * $hourHeight }}px;"></div>
                                 @endfor
@@ -268,21 +312,69 @@
                         @endforeach
                     </div>
                 @endif
+
+                @if (in_array($selectedView, ['day', 'week'], true))
+                    <div class="calendar-drag-status" role="status" aria-live="polite" hidden></div>
+                    <div class="move-confirmation" role="dialog" aria-modal="true" aria-labelledby="move-confirmation-title" hidden>
+                        <div class="move-confirmation-card">
+                            <h2 id="move-confirmation-title">¿Deseas mover esta cita?</h2>
+                            <p data-move-confirmation-details></p>
+                            <div class="move-confirmation-actions">
+                                <button class="btn primary" type="button" data-move-confirm>Guardar cambios</button>
+                                <button class="btn" type="button" data-move-cancel>Volver</button>
+                            </div>
+                        </div>
+                    </div>
+                @endif
             </section>
         </div>
     </div>
 
-    @if ($selectedView === 'day')
+    @if (in_array($selectedView, ['day', 'week'], true))
         <script>
             (() => {
                 const token = document.querySelector('meta[name="csrf-token"]')?.content;
-                const columns = [...document.querySelectorAll('[data-drop-column="day"]')];
+                const columns = [...document.querySelectorAll('[data-drop-column]')];
                 const status = document.querySelector('.calendar-drag-status');
+                const confirmation = document.querySelector('.move-confirmation');
+                const confirmationDetails = confirmation?.querySelector('[data-move-confirmation-details]');
+                const confirmationAccept = confirmation?.querySelector('[data-move-confirm]');
+                const confirmationCancel = confirmation?.querySelector('[data-move-cancel]');
                 const preview = document.createElement('div');
                 preview.className = 'calendar-drop-preview';
                 preview.hidden = true;
+                const trafficClasses = [
+                    'appointment-confirmed', 'appointment-cancelled', 'appointment-pending',
+                    'appointment-urgent-light', 'appointment-urgent-medium', 'appointment-urgent-high'
+                ];
                 let draggedEvent = null;
                 let clickStart = null;
+
+                const refreshPendingTraffic = (event) => {
+                    if (event.dataset.endAt) {
+                        event.classList.toggle('is-past', new Date(event.dataset.endAt).getTime() <= Date.now());
+                    }
+                    if (event.dataset.appointmentStatus !== 'pending' || ! event.dataset.startAt) return;
+
+                    const hoursUntilStart = (new Date(event.dataset.startAt).getTime() - Date.now()) / 3600000;
+                    const traffic = hoursUntilStart > 24
+                        ? ['appointment-pending', 'Pendiente, faltan más de 24 horas']
+                        : hoursUntilStart > 12
+                            ? ['appointment-urgent-light', 'Pendiente, faltan menos de 24 horas']
+                            : hoursUntilStart > 6
+                                ? ['appointment-urgent-medium', 'Pendiente, faltan menos de 12 horas']
+                                : ['appointment-urgent-high', 'Pendiente, faltan menos de 6 horas'];
+
+                    event.classList.remove(...trafficClasses);
+                    event.classList.add(traffic[0]);
+                    const hoverDetails = `${traffic[1]}\nCliente: ${event.dataset.clientName || 'Cliente'}\nEspecialista: ${event.dataset.stylistName || 'Sin asignar'}`;
+                    event.title = hoverDetails;
+                    event.setAttribute('aria-label', hoverDetails);
+                };
+
+                const refreshAllPendingTraffic = () => document.querySelectorAll('.calendar-event').forEach(refreshPendingTraffic);
+                refreshAllPendingTraffic();
+                window.setInterval(refreshAllPendingTraffic, 60000);
 
                 const showStatus = (message, type = 'info') => {
                     if (! status) {
@@ -298,7 +390,7 @@
                     }, 3200);
                 };
 
-                const snapMinutes = (value) => Math.max(0, Math.min(1439, Math.round(value / 15) * 15));
+                const snapMinutes = (value) => Math.max(0, Math.min(1439, Math.round(value / 5) * 5));
                 const previewTop = (minutes, startHour, hourHeight) => ((minutes - (startHour * 60)) / 60) * hourHeight;
                 const formatTime = (minutes) => {
                     const hour = Math.floor(minutes / 60);
@@ -335,8 +427,35 @@
                     preview.hidden = true;
                     preview.remove();
                 };
+                const confirmMove = (details) => new Promise((resolve) => {
+                    if (! confirmation || ! confirmationAccept || ! confirmationCancel) {
+                        resolve(true);
+                        return;
+                    }
 
-                document.querySelectorAll('.calendar-day-view .calendar-event').forEach((event) => {
+                    confirmationDetails.textContent = details;
+                    confirmation.hidden = false;
+                    const finish = (accepted) => {
+                        confirmation.hidden = true;
+                        confirmationAccept.onclick = null;
+                        confirmationCancel.onclick = null;
+                        confirmation.onclick = null;
+                        document.removeEventListener('keydown', onKeydown);
+                        resolve(accepted);
+                    };
+                    const onKeydown = (event) => {
+                        if (event.key === 'Escape') finish(false);
+                    };
+                    confirmationAccept.onclick = () => finish(true);
+                    confirmationCancel.onclick = () => finish(false);
+                    confirmation.onclick = (event) => {
+                        if (event.target === confirmation) finish(false);
+                    };
+                    document.addEventListener('keydown', onKeydown);
+                    confirmationAccept.focus();
+                });
+
+                document.querySelectorAll('.calendar-event').forEach((event) => {
                     event.addEventListener('pointerdown', (pointerEvent) => {
                         clickStart = { x: pointerEvent.clientX, y: pointerEvent.clientY };
                     });
@@ -408,6 +527,23 @@
                         movedEvent.querySelector('span').textContent = `${formatTime(minutes)} - ${formatTime(minutes + duration)}`;
                         column.appendChild(movedEvent);
                         hidePreview();
+
+                        const formattedDate = new Intl.DateTimeFormat('es-ES', {
+                            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                        }).format(new Date(`${column.dataset.date}T00:00:00`));
+                        const accepted = await confirmMove(
+                            `${movedEvent.dataset.clientName || 'Cliente'} · ${formattedDate} · ${formatTime(minutes)} a ${formatTime(minutes + duration)}`
+                        );
+                        if (! accepted) {
+                            previousParent.appendChild(movedEvent);
+                            movedEvent.style.top = previousTop;
+                            if (previousText && movedEvent.querySelector('span')) {
+                                movedEvent.querySelector('span').textContent = previousText;
+                            }
+                            showStatus('El cambio de horario fue cancelado.', 'info');
+                            return;
+                        }
+
                         movedEvent.classList.add('is-saving');
 
                         try {
@@ -424,7 +560,7 @@
                                     _method: 'PUT',
                                     date: column.dataset.date,
                                     minutes,
-                                    stylist_id: column.dataset.stylistId,
+                                    stylist_id: column.dataset.stylistId || movedEvent.dataset.stylistId || null,
                                 }),
                             });
                             const payload = await response.json().catch(() => ({
@@ -441,6 +577,26 @@
 
                             if (payload.appointment?.stylist && movedEvent.querySelector('small')) {
                                 movedEvent.querySelector('small').textContent = `${movedEvent.dataset.clientName} - ${payload.appointment.stylist}`;
+                            }
+
+                            if (payload.appointment?.starts_at_iso) {
+                                movedEvent.dataset.startAt = payload.appointment.starts_at_iso;
+                            }
+                            if (payload.appointment?.ends_at_iso) {
+                                movedEvent.dataset.endAt = payload.appointment.ends_at_iso;
+                            }
+                            movedEvent.dataset.stylistName = payload.appointment?.stylist || 'Sin asignar';
+
+                            if (payload.appointment?.traffic_class) {
+                                movedEvent.classList.remove(...trafficClasses);
+                                movedEvent.classList.add(payload.appointment.traffic_class);
+                            }
+
+                            if (payload.appointment?.traffic_label) {
+                                const stylistName = payload.appointment.stylist || 'Sin asignar';
+                                const hoverDetails = `${payload.appointment.traffic_label}\nCliente: ${movedEvent.dataset.clientName || 'Cliente'}\nEspecialista: ${stylistName}`;
+                                movedEvent.title = hoverDetails;
+                                movedEvent.setAttribute('aria-label', hoverDetails);
                             }
 
                             showStatus(payload.message || 'Cita movida correctamente.', 'ok');

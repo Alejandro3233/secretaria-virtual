@@ -52,7 +52,7 @@ class PublicBookingController extends Controller
         return view('public.bookings.show', [
             'clinic' => $clinic,
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
-            'stylists' => $clinic->stylists()->where('is_active', true)->orderBy('name')->get(),
+            'stylists' => $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get(),
         ]);
     }
 
@@ -63,7 +63,7 @@ class PublicBookingController extends Controller
         $clinic->refresh();
 
         $services = $clinic->services()->where('is_active', true)->orderBy('name')->get();
-        $stylists = $clinic->stylists()->where('is_active', true)->orderBy('name')->get();
+        $stylists = $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get();
         $selectedService = $this->selectedService($clinic, $request, $services->first());
         $selectedStylist = $this->selectedStylist($clinic, $request);
         $timezone = $clinic->localTimezone();
@@ -105,7 +105,7 @@ class PublicBookingController extends Controller
             ? Service::query()->where('clinic_id', $clinic->id)->where('is_active', true)->findOrFail($data['service_id'])
             : null;
         $stylist = ! empty($data['stylist_id'])
-            ? Stylist::query()->where('clinic_id', $clinic->id)->where('is_active', true)->findOrFail($data['stylist_id'])
+            ? Stylist::query()->where('clinic_id', $clinic->id)->where('is_active', true)->where('is_internal', false)->findOrFail($data['stylist_id'])
             : null;
 
         $startsAt = Carbon::parse($data['starts_at'], $clinic->localTimezone());
@@ -170,6 +170,7 @@ class PublicBookingController extends Controller
         return Stylist::query()
             ->where('clinic_id', $clinic->id)
             ->where('is_active', true)
+            ->where('is_internal', false)
             ->find($stylistId);
     }
 
@@ -254,6 +255,7 @@ class PublicBookingController extends Controller
         return Stylist::query()
             ->where('clinic_id', $clinic->id)
             ->where('is_active', true)
+            ->where('is_internal', false)
             ->orderBy('name')
             ->get();
     }

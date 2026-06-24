@@ -10,6 +10,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    @if (request()->is('consola'))
+        <script src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.12.1/dist/twilio.min.js"></script>
+    @endif
     <script>
         if (localStorage.getItem('sv-sidebar') === 'collapsed') {
             document.documentElement.classList.add('sidebar-collapsed');
@@ -66,16 +69,27 @@
         .brand {
             display: flex;
             align-items: center;
-            gap: 9px;
+            gap: 7px;
+            margin-left: 4px;
             min-width: 0;
             color: white;
         }
         .brand-logo {
-            width: 36px;
-            height: 36px;
-            flex: 0 0 36px;
+            width: 30px;
+            height: 30px;
+            flex: 0 0 30px;
             object-fit: contain;
             display: block;
+        }
+        .brand-wordmark {
+            width: 115px;
+            height: 34px;
+            flex: 0 0 115px;
+            display: block;
+            object-fit: cover;
+            object-position: center;
+            filter: grayscale(1) contrast(8) brightness(3);
+            mix-blend-mode: screen;
         }
         .brand-text {
             overflow: hidden;
@@ -144,6 +158,15 @@
             stroke-linecap: round;
             stroke-linejoin: round;
         }
+        .console-nav-link.call-live { background: rgba(192, 38, 90, .28); color: white; box-shadow: inset 0 0 0 1px rgba(249, 168, 212, .3); }
+        .nav-console-phone { display: none; color: #f9a8d4; animation: sidebarCallRing 1.15s ease-in-out infinite; }
+        .console-nav-link.call-live .nav-console-dashboard { display: none; }
+        .console-nav-link.call-live .nav-console-phone { display: block; }
+        .nav-call-live { display: none; align-items: center; gap: 5px; margin-left: auto; padding: 3px 6px; border-radius: 999px; background: var(--brand); color: white; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+        .console-nav-link.call-live .nav-call-live { display: inline-flex; }
+        .nav-call-live::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: white; animation: sidebarCallPulse 1.15s ease-in-out infinite; }
+        @keyframes sidebarCallRing { 0%, 100% { transform: rotate(-7deg) scale(.96); } 50% { transform: rotate(7deg) scale(1.08); } }
+        @keyframes sidebarCallPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
         .logout {
             width: 100%;
             min-height: 36px;
@@ -174,8 +197,9 @@
         .bar { height: 100%; background: var(--brand); width: 62%; }
         html.sidebar-collapsed .sidebar { padding: 16px 10px; align-items: center; }
         html.sidebar-collapsed .sidebar-top { width: 100%; justify-content: center; }
-        html.sidebar-collapsed .brand { justify-content: center; }
-        html.sidebar-collapsed .brand-logo { width: 38px; height: 38px; flex-basis: 38px; }
+        html.sidebar-collapsed .brand { justify-content: center; margin-left: 0; }
+        html.sidebar-collapsed .brand-logo { width: 38px; height: 38px; flex-basis: 38px; display: block; }
+        html.sidebar-collapsed .brand-wordmark { display: none; }
         html.sidebar-collapsed .brand-text,
         html.sidebar-collapsed .nav-label,
         html.sidebar-collapsed .nav-sub,
@@ -353,6 +377,7 @@
         .wait { background: #fef3c7; color: var(--amber); }
         .info { background: #dbeafe; color: var(--blue); }
         .danger { background: #fee2e2; color: #991b1b; }
+        .cancelled-status { background: #e5e7eb; color: #374151; }
         input, select {
             width: 100%;
             border: 1px solid #dbcbd4;
@@ -441,9 +466,65 @@
         .calendar-event b { font-size: 12px; }
         .calendar-event span { color: #4f3743; font-weight: 800; }
         .calendar-event small { color: var(--muted); font-size: 10px; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-compact { gap: 1px; padding: 4px 6px; line-height: 1.05; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-compact b { font-size: 11px; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-compact span { font-size: 10px; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-compact small { display: none; }
+        .calendar-day-view .calendar-event.is-compact { gap: 1px; padding: 4px 28px 4px 7px; line-height: 1.05; }
+        .calendar-day-view .calendar-event.is-compact b { font-size: 11px; }
+        .calendar-day-view .calendar-event.is-compact span { font-size: 10px; }
+        .calendar-day-view .calendar-event.is-compact small { display: none; }
+        .calendar-day-view .calendar-event.is-very-compact { display: flex; align-items: center; gap: 8px; }
+        .calendar-day-view .calendar-event.is-very-compact b,
+        .calendar-day-view .calendar-event.is-very-compact span { flex: 0 1 auto; max-width: 46%; }
+        .calendar-event.is-micro { display: flex; align-items: center; gap: 7px; padding: 1px 27px 1px 6px; line-height: 1; }
+        .calendar-event.is-micro b,
+        .calendar-event.is-micro span { flex: 0 1 auto; max-width: 48%; font-size: 9px; }
+        .calendar-event.is-micro small { display: none; }
+        .calendar-event.is-micro > .appointment-delivery,
+        .calendar-event.is-micro > .appointment-cancel-mark { right: 6px; bottom: 1px; font-size: 10px; }
         .calendar-event.from-google { border-left-color: #1a73e8; background: #e8f0fe; }
         .calendar-event.from-twilio { border-left-color: var(--green); background: #ecfdf3; }
         .calendar-event.from-web { border-left-color: var(--amber); background: #fff7ed; }
+        .calendar-event.appointment-confirmed,
+        .calendar-month-day .calendar-month-event.appointment-confirmed { border-color: #15803d; background: #dcfce7; color: #14532d; }
+        .calendar-event.appointment-cancelled,
+        .calendar-month-day .calendar-month-event.appointment-cancelled { border-color: #374151; background: #e5e7eb; color: #374151; text-decoration: line-through; opacity: .86; }
+        .calendar-event.appointment-pending,
+        .calendar-month-day .calendar-month-event.appointment-pending { border-color: #ca8a04; background: #fef9c3; color: #713f12; }
+        .calendar-event.appointment-urgent-light,
+        .calendar-month-day .calendar-month-event.appointment-urgent-light { border-color: #f87171; background: #fee2e2; color: #991b1b; }
+        .calendar-event.appointment-urgent-medium,
+        .calendar-month-day .calendar-month-event.appointment-urgent-medium { border-color: #dc2626; background: #fca5a5; color: #7f1d1d; }
+        .calendar-event.appointment-urgent-high,
+        .calendar-month-day .calendar-month-event.appointment-urgent-high { border-color: #7f1d1d; background: #b91c1c; color: white; }
+        .calendar-event.appointment-confirmed span,
+        .calendar-event.appointment-confirmed small,
+        .calendar-event.appointment-pending span,
+        .calendar-event.appointment-pending small,
+        .calendar-event.appointment-urgent-light span,
+        .calendar-event.appointment-urgent-light small,
+        .calendar-event.appointment-urgent-medium span,
+        .calendar-event.appointment-urgent-medium small { color: inherit; }
+        .calendar-event.appointment-urgent-high span,
+        .calendar-event.appointment-urgent-high small { color: white; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-past { border-left-color: #111827; background: #fff; color: #374151; }
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-past span,
+        .calendar-week:not(.calendar-day-view) .calendar-event.is-past small { color: #4b5563; }
+        .calendar-month-day .calendar-month-event.is-past { background: #fff; color: #4b5563; }
+        .calendar-month-event { display: block; border-left: 3px solid transparent; border-radius: 4px; padding: 3px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .appointment-delivery { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 900; letter-spacing: -3px; }
+        .calendar-event > .appointment-delivery,
+        .calendar-event > .appointment-cancel-mark { position: absolute; right: 7px; bottom: 5px; margin: 0; }
+        .appointment-delivery.sent { color: #2563eb; }
+        .appointment-delivery.responded { color: #15803d; }
+        .status .appointment-delivery { margin-left: 7px; }
+        .appointment-cancel-mark { margin-left: auto; color: #374151; font-style: normal; font-size: 15px; font-weight: 900; line-height: 1; text-decoration: none; }
+        .status .appointment-cancel-mark { margin-left: 7px; }
+        .calendar-month-event .appointment-cancel-mark { float: right; margin-left: 5px; }
+        .appointment-google-badge { width: 16px; height: 16px; display: inline-block; margin-right: 4px; object-fit: contain; vertical-align: middle; }
+        .calendar-event.appointment-urgent-high .appointment-delivery { color: white; }
+        .calendar-month-event .appointment-delivery { float: right; margin-left: 5px; }
         .calendar-day-column.is-drag-over { background: #f8fbff; box-shadow: inset 0 0 0 2px rgba(26,115,232,.2); }
         .calendar-drop-preview { position: absolute; left: 5px; right: 5px; z-index: 2; display: flex; align-items: flex-start; justify-content: flex-end; border: 1px dashed #1a73e8; border-left: 3px solid #1a73e8; border-radius: 6px; padding: 4px 6px; background: rgba(232, 240, 254, .78); color: #174ea6; font-size: 11px; font-weight: 900; pointer-events: none; box-shadow: 0 4px 12px rgba(26,115,232,.12); }
         .calendar-drop-preview[hidden] { display: none; }
@@ -493,7 +574,7 @@
         <div class="sidebar-top">
             <a class="brand" href="/consola" title="Secretary365">
                 <img class="brand-logo" src="/favicon.png" alt="">
-                <span class="brand-text">Secretary365</span>
+                <img class="brand-wordmark" src="/logo-login-v2.png" alt="Secretary365">
             </a>
             <button class="sidebar-toggle" type="button" aria-label="Cerrar menu" aria-expanded="true" title="Abrir o cerrar menu">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M10 5v14"/></svg>
@@ -509,6 +590,10 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 <span class="nav-label">Citas</span>
             </a>
+            <a class="{{ request()->is('clientes*') ? 'active' : '' }}" href="/clientes" title="Clientes">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                <span class="nav-label">Clientes</span>
+            </a>
             <a class="{{ request()->is('personal') ? 'active' : '' }}" href="/personal" title="Personal">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 <span class="nav-label">Personal</span>
@@ -517,19 +602,25 @@
                 <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><circle cx="8" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="17" r="1"/></svg>
                 <span class="nav-label">Servicios</span>
             </a>
-            <a class="{{ request()->is('consola') || request()->is('dashboard') ? 'active' : '' }}" href="/consola" title="Consola">
-                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            <a class="console-nav-link {{ request()->is('consola') || request()->is('dashboard') ? 'active' : '' }}" href="/consola" title="Consola" data-console-call-indicator>
+                <svg class="icon nav-console-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                <svg class="icon nav-console-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.33 1.84.56 2.8.69A2 2 0 0 1 22 16.92z"/></svg>
                 <span class="nav-label">Consola</span>
+                <span class="nav-call-live nav-label">En vivo</span>
             </a>
-            <a class="{{ request()->is('ajustes') ? 'active' : '' }}" href="/ajustes" title="Ajustes">
+            <a class="{{ request()->is('manager*') ? 'active' : '' }}" href="/manager" title="Manager">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19V3"/><path d="M2 19h22"/></svg>
+                <span class="nav-label">Manager</span>
+            </a>
+            <a class="{{ request()->is('ajustes') || request()->is('facturacion*') ? 'active' : '' }}" href="/ajustes" title="Ajustes">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.38.52.7.9.9.34.18.72.28 1.1.28h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-2 1z"/></svg>
                 <span class="nav-label">Ajustes</span>
             </a>
-            <a class="{{ request()->is('facturacion*') ? 'active' : '' }}" href="/facturacion" title="Facturacion">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></svg>
-                <span class="nav-label">Facturacion</span>
-            </a>
             @if (auth()->user()?->is_super_admin)
+                <a class="{{ request()->is('gestion-usuarios*') ? 'active' : '' }}" href="/gestion-usuarios" title="Gestion de usuarios">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+                    <span class="nav-label">Gestion de usuarios</span>
+                </a>
                 <a class="{{ request()->is('base-de-datos*') ? 'active' : '' }}" href="/base-de-datos" title="Base de datos">
                     <svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
                     <span class="nav-label">Base de datos</span>
@@ -600,7 +691,9 @@
                         </div>
                         <a href="/ajustes">Ajustes de cuenta</a>
                         <a href="/google-calendar/connect">Google Calendar</a>
+                        <a href="{{ route('activity-export') }}">Descargar informe Excel</a>
                         @if ($topbarUser?->is_super_admin)
+                            <a href="/gestion-usuarios">Gestion de usuarios</a>
                             <a href="/base-de-datos">Base de datos</a>
                         @endif
                         <form method="POST" action="/logout">
@@ -629,6 +722,164 @@
         sidebarToggle?.addEventListener('click', () => {
             setSidebarState(! document.documentElement.classList.contains('sidebar-collapsed'));
         });
+
+        const consoleCallIndicator = document.querySelector('[data-console-call-indicator]');
+        const consoleHotCallAlert = document.querySelector('[data-hot-call-alert]');
+        const consoleHotCallTitle = document.querySelector('[data-hot-call-title]');
+        const consoleHotCallClient = document.querySelector('[data-hot-call-client]');
+        const callAnswerButton = document.querySelector('[data-call-answer]');
+        const callAssistantButton = document.querySelector('[data-call-assistant]');
+        const callEndButton = document.querySelector('[data-call-end]');
+        let globalCallActive = consoleHotCallAlert ? !consoleHotCallAlert.hidden : false;
+        let inboundCallExpiryTimer = null;
+        let voiceDevice = null;
+        let pendingBrowserCall = null;
+        let activeBrowserCall = null;
+
+        const setCallButtons = (state) => {
+            if (!callAnswerButton || !callAssistantButton || !callEndButton) return;
+            const incoming = state === 'incoming';
+            const active = state === 'active';
+            callAnswerButton.hidden = !incoming;
+            callAssistantButton.hidden = !incoming;
+            callEndButton.hidden = !active;
+            callAnswerButton.disabled = !incoming;
+            callAssistantButton.disabled = !incoming;
+        };
+
+        const finishBrowserCall = () => {
+            pendingBrowserCall = null;
+            activeBrowserCall = null;
+            setCallButtons('idle');
+            monitorActiveCall();
+        };
+
+        const showIncomingBrowserCall = (call) => {
+            pendingBrowserCall = call;
+            const name = call.customParameters?.get('callerName');
+            const phone = call.customParameters?.get('callerPhone') || call.parameters?.From;
+            if (consoleHotCallAlert) consoleHotCallAlert.hidden = false;
+            if (consoleHotCallTitle) consoleHotCallTitle.textContent = 'Llamada entrante · esperando respuesta';
+            if (consoleHotCallClient) consoleHotCallClient.textContent = name && phone ? `${name} · ${phone}` : (name || phone || 'Número desconocido');
+            setCallButtons('incoming');
+
+            call.on('accept', () => {
+                activeBrowserCall = call;
+                pendingBrowserCall = null;
+                if (consoleHotCallTitle) consoleHotCallTitle.textContent = 'Llamada atendida desde la consola';
+                setCallButtons('active');
+            });
+            call.on('disconnect', finishBrowserCall);
+            call.on('cancel', finishBrowserCall);
+            call.on('reject', finishBrowserCall);
+            call.on('error', finishBrowserCall);
+        };
+
+        const fetchVoiceToken = async () => {
+            const response = await fetch('/twilio/voice/browser/token', {
+                headers: { Accept: 'application/json' },
+                cache: 'no-store',
+            });
+            if (!response.ok) throw new Error('La telefonía del navegador no está configurada.');
+            return response.json();
+        };
+
+        const initializeBrowserVoice = async () => {
+            if (!callAnswerButton || !window.Twilio?.Device) return;
+            try {
+                const credentials = await fetchVoiceToken();
+                voiceDevice = new window.Twilio.Device(credentials.token, {
+                    codecPreferences: ['opus', 'pcmu'],
+                    logLevel: 1,
+                });
+                voiceDevice.on('incoming', showIncomingBrowserCall);
+                voiceDevice.on('tokenWillExpire', async () => {
+                    try {
+                        const refreshed = await fetchVoiceToken();
+                        voiceDevice.updateToken(refreshed.token);
+                    } catch (error) {
+                        // El registro existente sigue válido hasta que expire.
+                    }
+                });
+                await voiceDevice.register();
+            } catch (error) {
+                setCallButtons('idle');
+            }
+        };
+
+        callAnswerButton?.addEventListener('click', () => {
+            if (!pendingBrowserCall) return;
+            callAnswerButton.disabled = true;
+            callAssistantButton.disabled = true;
+            pendingBrowserCall.accept();
+        });
+        callAssistantButton?.addEventListener('click', () => {
+            if (!pendingBrowserCall) return;
+            callAnswerButton.disabled = true;
+            callAssistantButton.disabled = true;
+            pendingBrowserCall.reject();
+            if (consoleHotCallTitle) consoleHotCallTitle.textContent = 'Pasando la llamada a Nora…';
+        });
+        callEndButton?.addEventListener('click', () => activeBrowserCall?.disconnect());
+
+        const monitorActiveCall = async () => {
+            try {
+                const response = await fetch('/consola/llamada-activa', {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!response.ok) return;
+                const call = await response.json();
+                if (inboundCallExpiryTimer) {
+                    window.clearTimeout(inboundCallExpiryTimer);
+                    inboundCallExpiryTimer = null;
+                }
+                consoleCallIndicator?.classList.toggle('call-live', Boolean(call.active));
+                consoleCallIndicator?.setAttribute('title', call.active
+                    ? `${call.status_label || 'Llamada en curso'} · ${call.client || call.phone || 'Cliente'}`
+                    : 'Consola');
+
+                if (call.active && consoleHotCallAlert) {
+                    consoleHotCallAlert.hidden = false;
+                    consoleHotCallTitle.textContent = call.status_label || 'Llamada detectada en tiempo real';
+                    consoleHotCallClient.textContent = call.phone && call.client !== call.phone
+                        ? `${call.client} · ${call.phone}`
+                        : (call.client || call.phone || 'Número desconocido');
+                }
+
+                if (!call.active && consoleHotCallAlert && !pendingBrowserCall && !activeBrowserCall) {
+                    consoleHotCallAlert.hidden = true;
+                    setCallButtons('idle');
+                }
+                globalCallActive = call.active;
+
+                if (call.active && call.direction === 'inbound' && call.expires_in_ms !== null) {
+                    inboundCallExpiryTimer = window.setTimeout(
+                        monitorActiveCall,
+                        Math.max(100, Number(call.expires_in_ms) + 100),
+                    );
+                }
+            } catch (error) {
+                // Una comprobación fallida no interrumpe el resto del panel.
+            }
+        };
+
+        let globalCallTimer = null;
+        const startGlobalCallMonitoring = () => {
+            if (globalCallTimer || document.hidden) return;
+            monitorActiveCall();
+            globalCallTimer = window.setInterval(monitorActiveCall, 10000);
+        };
+        const stopGlobalCallMonitoring = () => {
+            if (!globalCallTimer) return;
+            window.clearInterval(globalCallTimer);
+            globalCallTimer = null;
+        };
+        document.addEventListener('visibilitychange', () => {
+            document.hidden ? stopGlobalCallMonitoring() : startGlobalCallMonitoring();
+        });
+        startGlobalCallMonitoring();
+        initializeBrowserVoice();
 
     </script>
 </body>

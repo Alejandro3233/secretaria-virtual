@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Models\Appointment;
 use App\Models\Client;
 use App\Models\Clinic;
+use App\Models\GoogleCalendarMapping;
 use App\Models\Service;
+use App\Models\Stylist;
 use Carbon\CarbonInterface;
 use Google\Client as GoogleClient;
 use Google\Service\Calendar;
@@ -63,6 +65,7 @@ class GoogleCalendarService
         $clinic->forceFill([
             'google_calendar_id' => 'primary',
             'google_calendar_summary' => $calendarSummary,
+            'google_calendar_organization_mode' => null,
             'google_access_token' => $token,
             'google_refresh_token' => $token['refresh_token'] ?? $clinic->google_refresh_token,
             'google_token_expires_at' => isset($token['expires_in']) ? now()->addSeconds((int) $token['expires_in']) : null,
@@ -77,6 +80,7 @@ class GoogleCalendarService
         $clinic->forceFill([
             'google_calendar_id' => null,
             'google_calendar_summary' => null,
+            'google_calendar_organization_mode' => null,
             'google_access_token' => null,
             'google_refresh_token' => null,
             'google_token_expires_at' => null,
@@ -84,6 +88,122 @@ class GoogleCalendarService
             'google_last_synced_at' => null,
             'google_sync_token' => null,
         ])->save();
+    }
+
+    public function discoverCalendars(Clinic $clinic): int
+    {
+        $this->ensureConnected($clinic);
+
+        $calendar = new Calendar($this->authorizedClient($clinic));
+        $detectedIds = [];
+        $pageToken = null;
+        $detected = 0;
+
+        do {
+            $calendarList = $calendar->calendarList->listCalendarList(array_filter([
+                'maxResults' => 250,
+                'pageToken' => $pageToken,
+                'showDeleted' => false,
+                'showHidden' => false,
+            ]));
+
+            foreach ($calendarList->getItems() as $item) {
+                if (! $item->getId()) {
+                    continue;
+                }
+
+                $calendarId = $item->getPrimary() ? 'primary' : $item->getId();
+                $detectedIds[] = $calendarId;
+                $detected++;
+
+                if ($item->getPrimary() && $item->getId() !== 'primary') {
+                    $legacyPrimary = GoogleCalendarMapping::query()
+                        ->where('clinic_id', $clinic->id)
+                        ->where('google_calendar_id', $item->getId())
+                        ->first();
+
+                    if ($legacyPrimary && ! GoogleCalendarMapping::query()->where('clinic_id', $clinic->id)->where('google_calendar_id', 'primary')->exists()) {
+                        $legacyPrimary->update(['google_calendar_id' => 'primary']);
+                    }
+                }
+
+                $mapping = GoogleCalendarMapping::query()->firstOrNew([
+                    'clinic_id' => $clinic->id,
+                    'google_calendar_id' => $calendarId,
+                ]);
+
+                if (! $mapping->exists) {
+                    $mapping->is_enabled = (bool) $item->getPrimary();
+                }
+
+                $mapping->fill([
+                    'google_calendar_name' => $item->getSummary() ?: 'Calendario sin nombre',
+                    'access_role' => $item->getAccessRole(),
+                    'is_primary' => (bool) $item->getPrimary(),
+                    'is_available' => true,
+                    'last_detected_at' => now(),
+                ])->save();
+            }
+
+            $pageToken = $calendarList->getNextPageToken();
+        } while ($pageToken);
+
+        GoogleCalendarMapping::query()
+            ->where('clinic_id', $clinic->id)
+            ->when($detectedIds, fn ($query) => $query->whereNotIn('google_calendar_id', $detectedIds))
+            ->update(['is_available' => false]);
+
+        return $detected;
+    }
+
+    public function createCalendarsForStylists(Clinic $clinic): int
+    {
+        $this->ensureConnected($clinic);
+
+        $google = new Calendar($this->authorizedClient($clinic));
+        $created = 0;
+
+        $clinic->stylists()
+            ->where('is_internal', false)
+            ->where('is_active', true)
+            ->get()
+            ->each(function (Stylist $stylist) use ($clinic, $google, &$created): void {
+                $assignedMapping = $clinic->googleCalendarMappings()
+                    ->where('stylist_id', $stylist->id)
+                    ->where('is_available', true)
+                    ->whereIn('access_role', ['owner', 'writer'])
+                    ->first();
+
+                if ($assignedMapping) {
+                    $assignedMapping->update(['is_enabled' => true]);
+                    return;
+                }
+
+                $resource = new \Google\Service\Calendar\Calendar();
+                $resource->setSummary($clinic->name.' · '.$stylist->name);
+                $resource->setTimeZone($clinic->localTimezone());
+                $createdCalendar = $google->calendars->insert($resource);
+
+                GoogleCalendarMapping::query()->updateOrCreate(
+                    [
+                        'clinic_id' => $clinic->id,
+                        'google_calendar_id' => $createdCalendar->getId(),
+                    ],
+                    [
+                        'stylist_id' => $stylist->id,
+                        'google_calendar_name' => $createdCalendar->getSummary() ?: $resource->getSummary(),
+                        'access_role' => 'owner',
+                        'is_primary' => false,
+                        'is_enabled' => true,
+                        'is_available' => true,
+                        'last_detected_at' => now(),
+                    ],
+                );
+
+                $created++;
+            });
+
+        return $created;
     }
 
     public function syncClinic(Clinic $clinic): array
@@ -104,10 +224,20 @@ class GoogleCalendarService
                     $exported++;
                 });
 
-            $imported = $this->importUpcomingEvents($clinic);
+            $mappings = $clinic->googleCalendarMappings()
+                ->where('is_enabled', true)
+                ->where('is_available', true)
+                ->get();
+
+            if ($mappings->isEmpty()) {
+                $imported = $this->importUpcomingEvents($clinic);
+            } else {
+                $imported = $mappings->sum(fn (GoogleCalendarMapping $mapping) => $this->importUpcomingEvents($clinic, $mapping));
+            }
 
             $clinic->forceFill([
                 'google_last_synced_at' => now(),
+                'google_ever_synced_at' => $clinic->google_ever_synced_at ?: now(),
             ])->save();
 
             return [
@@ -127,7 +257,8 @@ class GoogleCalendarService
         $this->ensureConnected($clinic);
 
         $calendar = new Calendar($this->authorizedClient($clinic));
-        $calendarId = $clinic->google_calendar_id ?: 'primary';
+        $calendarId = $appointment->google_calendar_id
+            ?: $this->calendarIdForAppointment($appointment);
         $event = $this->appointmentToEvent($appointment);
 
         try {
@@ -216,12 +347,12 @@ class GoogleCalendarService
             || str_contains($message, 'Not Found');
     }
 
-    public function importUpcomingEvents(Clinic $clinic): int
+    public function importUpcomingEvents(Clinic $clinic, ?GoogleCalendarMapping $mapping = null): int
     {
         $this->ensureConnected($clinic);
 
         $calendar = new Calendar($this->authorizedClient($clinic));
-        $calendarId = $clinic->google_calendar_id ?: 'primary';
+        $calendarId = $mapping?->google_calendar_id ?: $clinic->google_calendar_id ?: 'primary';
 
         $events = $calendar->events->listEvents($calendarId, [
             'singleEvents' => true,
@@ -234,6 +365,7 @@ class GoogleCalendarService
 
         $imported = 0;
         $seenEventIds = [];
+        $googleStylist = $mapping?->stylist ?: $this->calendarStylist($clinic);
 
         foreach ($events->getItems() as $event) {
             if (! $event->getId()) {
@@ -264,16 +396,21 @@ class GoogleCalendarService
 
             $endsAt = $this->eventDateToCarbon($event->getEnd()) ?? $startsAt->copy()->addMinutes(60);
 
-            $appointment = Appointment::query()
-                ->where('clinic_id', $clinic->id)
-                ->where('google_calendar_event_id', $event->getId())
-                ->first();
+            $appointment = $this->findAppointmentForGoogleEvent(
+                $clinic,
+                $event,
+                $calendarId,
+                $googleStylist,
+                $startsAt,
+                $endsAt
+            );
 
             if (! $appointment) {
                 $appointment = new Appointment([
                     'clinic_id' => $clinic->id,
                     'client_id' => $this->calendarClient($clinic, $event)->id,
                     'service_id' => $this->calendarService($clinic)->id,
+                    'stylist_id' => $googleStylist->id,
                     'status' => 'confirmed',
                     'source' => 'google_calendar',
                     'priority' => 'normal',
@@ -284,22 +421,86 @@ class GoogleCalendarService
                 $imported++;
             }
 
-            $appointment->forceFill([
-                'starts_at' => $startsAt,
-                'ends_at' => $endsAt,
-                'reason' => $event->getSummary() ?: 'Cita importada desde Google Calendar',
-                'client_comments' => $event->getDescription(),
+            $syncedData = [
                 'google_calendar_id' => $calendarId,
                 'google_calendar_event_id' => $event->getId(),
                 'google_synced_at' => now(),
                 'google_sync_status' => 'synced',
                 'google_sync_error' => null,
-            ])->save();
+            ];
+
+            if ($appointment->source === 'google_calendar') {
+                $syncedData['stylist_id'] = $googleStylist->id;
+                $syncedData['starts_at'] = $startsAt;
+                $syncedData['ends_at'] = $endsAt;
+                $syncedData['reason'] = $event->getSummary() ?: 'Cita importada desde Google Calendar';
+                $syncedData['client_comments'] = $event->getDescription();
+            }
+
+            $appointment->forceFill($syncedData)->save();
         }
 
         $this->cancelMissingGoogleAppointments($clinic, $calendarId, $seenEventIds);
 
         return $imported;
+    }
+
+    private function findAppointmentForGoogleEvent(
+        Clinic $clinic,
+        Event $event,
+        string $calendarId,
+        Stylist $stylist,
+        Carbon $startsAt,
+        Carbon $endsAt
+    ): ?Appointment {
+        $internalAppointmentId = data_get(
+            $event->getExtendedProperties()?->getPrivate(),
+            'secretaria_virtual_appointment_id'
+        );
+
+        if ($internalAppointmentId && ctype_digit((string) $internalAppointmentId)) {
+            $appointment = Appointment::query()
+                ->where('clinic_id', $clinic->id)
+                ->whereKey((int) $internalAppointmentId)
+                ->first();
+
+            if ($appointment) {
+                return $appointment;
+            }
+        }
+
+        $appointment = Appointment::query()
+            ->where('clinic_id', $clinic->id)
+            ->where('google_calendar_event_id', $event->getId())
+            ->first();
+
+        if ($appointment) {
+            return $appointment;
+        }
+
+        if ($stylist->is_internal) {
+            return null;
+        }
+
+        $summary = trim((string) ($event->getSummary() ?: ''));
+
+        return Appointment::query()
+            ->with(['client', 'service'])
+            ->where('clinic_id', $clinic->id)
+            ->where('stylist_id', $stylist->id)
+            ->where('source', '!=', 'google_calendar')
+            ->where('starts_at', $startsAt)
+            ->where('ends_at', $endsAt)
+            ->get()
+            ->first(function (Appointment $candidate) use ($summary): bool {
+                $candidateSummary = trim(
+                    ($candidate->service?->name ?? $candidate->reason ?? 'Cita de salon')
+                    .' - '
+                    .trim(($candidate->client?->first_name ?? '').' '.($candidate->client?->last_name ?? ''))
+                );
+
+                return $summary !== '' && mb_strtolower($candidateSummary) === mb_strtolower($summary);
+            });
     }
 
     private function cancelMissingGoogleAppointments(Clinic $clinic, string $calendarId, array $seenEventIds): void
@@ -349,6 +550,25 @@ class GoogleCalendarService
         }
     }
 
+    private function calendarIdForAppointment(Appointment $appointment): string
+    {
+        if ($appointment->stylist_id) {
+            $mapping = GoogleCalendarMapping::query()
+                ->where('clinic_id', $appointment->clinic_id)
+                ->where('stylist_id', $appointment->stylist_id)
+                ->where('is_enabled', true)
+                ->where('is_available', true)
+                ->whereIn('access_role', ['owner', 'writer'])
+                ->first();
+
+            if ($mapping) {
+                return $mapping->google_calendar_id;
+            }
+        }
+
+        return $appointment->clinic->google_calendar_id ?: 'primary';
+    }
+
     private function appointmentToEvent(Appointment $appointment): Event
     {
         $client = $appointment->client;
@@ -393,7 +613,7 @@ class GoogleCalendarService
 
         $value = $date->getDateTime() ?: $date->getDate();
 
-        return $value ? Carbon::parse($value) : null;
+        return $value ? Carbon::parse($value)->timezone(config('app.timezone')) : null;
     }
 
     private function calendarClient(Clinic $clinic, Event $event): Client
@@ -418,6 +638,20 @@ class GoogleCalendarService
         return Service::query()->firstOrCreate(
             ['clinic_id' => $clinic->id, 'name' => 'Google Calendar'],
             ['duration_minutes' => 60, 'is_active' => true]
+        );
+    }
+
+    private function calendarStylist(Clinic $clinic): Stylist
+    {
+        return Stylist::query()->firstOrCreate(
+            ['clinic_id' => $clinic->id, 'name' => 'Google', 'is_internal' => true],
+            [
+                'specialty' => 'Control interno de Google Calendar',
+                'work_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+                'work_starts_at' => '00:00',
+                'work_ends_at' => '23:59',
+                'is_active' => true,
+            ]
         );
     }
 }

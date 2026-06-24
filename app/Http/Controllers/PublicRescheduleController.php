@@ -9,6 +9,7 @@ use App\Services\AppointmentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class PublicRescheduleController extends Controller
@@ -17,6 +18,7 @@ class PublicRescheduleController extends Controller
     {
         $this->authorizeToken($appointment, $token, $reminders);
         $appointment->load(['clinic', 'client', 'service', 'stylist']);
+        $this->recordClientResponse($appointment, 'confirm');
 
         if ($appointment->status === 'pending') {
             $appointments->confirm($appointment);
@@ -44,6 +46,7 @@ class PublicRescheduleController extends Controller
     {
         $this->authorizeToken($appointment, $token, $reminders);
         $appointment->load(['clinic', 'client', 'service', 'stylist']);
+        $this->recordClientResponse($appointment, 'cancel');
 
         if (! in_array($appointment->status, ['cancelled', 'canceled'], true)) {
             $appointments->cancel($appointment);
@@ -91,10 +94,11 @@ class PublicRescheduleController extends Controller
 
         [$startsAtValue, $stylistId] = array_pad(explode('|', $data['slot'], 2), 2, null);
         $startsAt = Carbon::parse($startsAtValue, $appointment->clinic->localTimezone());
-        $stylist = $stylistId ? Stylist::query()->where('clinic_id', $appointment->clinic_id)->whereKey((int) $stylistId)->first() : null;
+        $stylist = $stylistId ? Stylist::query()->where('clinic_id', $appointment->clinic_id)->where('is_active', true)->where('is_internal', false)->whereKey((int) $stylistId)->first() : null;
         $hasActiveStylists = Stylist::query()
             ->where('clinic_id', $appointment->clinic_id)
             ->where('is_active', true)
+            ->where('is_internal', false)
             ->exists();
 
         if ($hasActiveStylists) {
@@ -112,6 +116,7 @@ class PublicRescheduleController extends Controller
             'stylist_id' => $stylist?->id,
             'status' => 'confirmed',
         ]);
+        $this->recordClientResponse($appointment, 'reschedule');
         $token = $reminders->tokenFor($appointment);
 
         return redirect()->route('public-reschedule.show', [$appointment, $token])
@@ -125,6 +130,7 @@ class PublicRescheduleController extends Controller
         $stylists = Stylist::query()
             ->where('clinic_id', $appointment->clinic_id)
             ->where('is_active', true)
+            ->where('is_internal', false)
             ->orderBy('name')
             ->get()
             ->filter(fn (Stylist $stylist) => $this->stylistWorksOnDate($stylist, $date));
@@ -168,6 +174,33 @@ class PublicRescheduleController extends Controller
             })
             ->filter()
             ->values();
+    }
+
+    private function recordClientResponse(Appointment $appointment, string $response): void
+    {
+        $alreadyRecorded = DB::table('notifications')
+            ->where('appointment_id', $appointment->id)
+            ->where('event', 'appointment_client_response')
+            ->where('body', $response)
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return;
+        }
+
+        DB::table('notifications')->insert([
+            'clinic_id' => $appointment->clinic_id,
+            'client_id' => $appointment->client_id,
+            'appointment_id' => $appointment->id,
+            'channel' => 'web',
+            'event' => 'appointment_client_response',
+            'recipient' => $appointment->client?->email ?: $appointment->client?->phone ?: 'unknown',
+            'status' => 'received',
+            'body' => $response,
+            'sent_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function stylistAvailable(Appointment $appointment, Stylist $stylist, Carbon $startsAt): bool

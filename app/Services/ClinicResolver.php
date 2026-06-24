@@ -20,6 +20,7 @@ class ClinicResolver
                 ->where('slug', 'profesional')
                 ->first();
 
+            $voices = app(GoogleTextToSpeechService::class);
             $clinic = Clinic::create([
                 'subscription_plan_id' => $plan?->id,
                 'name' => 'Salon de '.$user->name,
@@ -27,7 +28,10 @@ class ClinicResolver
                 'country_code' => 'US',
                 'timezone' => Clinic::timezoneForCountry('US'),
                 'subscription_status' => 'trial',
-                'google_tts_voice' => GoogleTextToSpeechService::TWILIO_VOICE_ID,
+                'google_tts_voice' => $voices->defaultVoiceForLanguage('es'),
+                'notification_preferences' => [
+                    'nora_language' => 'es',
+                ],
             ]);
 
             DB::table('clinic_users')->insert([

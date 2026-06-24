@@ -5,11 +5,14 @@
 @section('page_subtitle', 'Organiza integraciones, reservas, facturacion y preferencias del salon.')
 
 @section('content')
-    @php($clinic = auth()->user()->primaryClinic())
+    @php($currentUser = auth()->user())
+    @php($clinic = $currentUser->primaryClinic())
     @php($googleTtsConfigured = (bool) ((config('google.tts.credentials_path') && is_file(config('google.tts.credentials_path'))) || config('google.tts.credentials_json')))
-    @php($voiceOptions = app(\App\Services\GoogleTextToSpeechService::class)->voiceOptions())
-    @php($activeVoice = $clinic?->google_tts_voice ?: \App\Services\GoogleTextToSpeechService::TWILIO_VOICE_ID)
-    @php($voiceConfigured = $activeVoice === \App\Services\GoogleTextToSpeechService::TWILIO_VOICE_ID || $googleTtsConfigured)
+    @php($voiceService = app(\App\Services\GoogleTextToSpeechService::class))
+    @php($voiceOptions = $voiceService->voiceOptions())
+    @php($activeVoice = $voiceService->validVoice($clinic?->google_tts_voice) ? $clinic?->google_tts_voice : \App\Services\GoogleTextToSpeechService::TWILIO_VOICE_ID)
+    @php($voiceConfigured = $voiceService->isTwilioVoice($activeVoice) || $googleTtsConfigured)
+    @php($pendingContactChange = session('settings_contact_change'))
     @php($twilioCountries = app(\App\Services\TwilioPhoneNumberService::class)->supportedCountries())
     @php($businessStatus = $clinic ? 'Activo' : 'Pendiente')
     @php($billingStatus = $clinic?->plan ? $clinic->plan->name : 'Sin plan')
@@ -51,6 +54,18 @@
         $notificationPreferences['appointment_reschedule_link_sms'] ?? false,
     ])->filter()->count())
     @php($callNotificationsActive = (bool) ($notificationPreferences['appointment_reminder_call'] ?? false))
+    @php($callForwardingMode = $notificationPreferences['call_forwarding_mode'] ?? 'no_answer')
+    @php($callForwardingSeconds = (int) ($notificationPreferences['call_forwarding_ring_seconds'] ?? 20))
+    @php($callForwardingSent = ! empty($notificationPreferences['call_forwarding_instructions_sent_at']))
+    @php($forwardingService = app(\App\Services\CallForwardingInstructionService::class))
+    @php($callForwardingCountry = $forwardingService->countryForPhone($clinic?->phone, $clinic?->country_code))
+    @php($callForwardingOperators = $forwardingService->operators($callForwardingCountry))
+    @php($callForwardingOperator = $notificationPreferences['call_forwarding_operator'] ?? array_key_first($callForwardingOperators))
+    @php($noraLanguage = 'es')
+    @php($voiceOptions = $voiceService->voiceOptions())
+    @php($activeVoice = array_key_exists((string) $activeVoice, $voiceOptions) ? $activeVoice : $voiceService->defaultVoiceForLanguage($noraLanguage))
+    @php($googleCalendarMappings = $clinic?->googleCalendarMappings()->with('stylist')->orderByDesc('is_primary')->orderBy('google_calendar_name')->get() ?? collect())
+    @php($googleStylists = $clinic?->stylists()->where('is_internal', false)->where('is_active', true)->orderBy('name')->get() ?? collect())
 
     <style>
         .settings-shell {
@@ -362,6 +377,33 @@
             color: #94a3b8;
         }
 
+        .forwarding-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+        .forwarding-option { position: relative; display: block; cursor: pointer; }
+        .forwarding-option input { position: absolute; opacity: 0; pointer-events: none; }
+        .forwarding-option-body { min-height: 112px; display: block; border: 1px solid var(--line); border-radius: 8px; padding: 15px; background: white; transition: .16s ease; }
+        .forwarding-option-body b, .forwarding-option-body span { display: block; }
+        .forwarding-option-body b { color: var(--ink); font-size: 14px; }
+        .forwarding-option-body span { margin-top: 7px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+        .forwarding-option input:checked + .forwarding-option-body { border-color: var(--brand); background: #fff5f8; box-shadow: 0 0 0 3px rgba(192,38,90,.09); }
+        .forwarding-option.recommended .forwarding-option-body::before { content: "Recomendado"; display: inline-block; margin-bottom: 9px; border-radius: 999px; padding: 3px 8px; color: #166534; background: #dcfce7; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+        .forwarding-guide { margin-top: 16px; border: 1px solid #bfdbfe; border-radius: 8px; padding: 15px; color: #1e3a8a; background: #eff6ff; font-size: 13px; line-height: 1.55; }
+        .forwarding-guide b { display: block; margin-bottom: 5px; }
+        .calendar-map-list { display: grid; gap: 10px; margin-top: 16px; }
+        .calendar-map-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, .9fr) auto; gap: 14px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: white; }
+        .calendar-map-name b, .calendar-map-name span { display: block; }
+        .calendar-map-name span { margin-top: 4px; color: var(--muted); font-size: 12px; }
+        .calendar-map-enabled { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-weight: 800; white-space: nowrap; }
+        .calendar-map-enabled input { width: 17px; height: 17px; min-height: 17px; padding: 0; accent-color: var(--brand); }
+        .calendar-organization { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #fffafd; }
+        .calendar-organization h3 { margin: 0; font-size: 16px; }
+        .calendar-organization-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .calendar-organization-option { position: relative; display: flex; gap: 10px; align-items: flex-start; min-height: 92px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+        .calendar-organization-option:has(input:checked) { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(192,38,90,.08); }
+        .calendar-organization-option input { width: 17px; height: 17px; min-height: 17px; margin-top: 2px; accent-color: var(--brand); }
+        .calendar-organization-option b, .calendar-organization-option span { display: block; }
+        .calendar-organization-option span { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+        .calendar-recommended { color: var(--brand) !important; font-size: 10px !important; font-weight: 900; text-transform: uppercase; }
+
         @media (max-width: 860px) {
             .settings-head,
             .settings-grid,
@@ -370,6 +412,10 @@
             .notification-appointment {
                 grid-template-columns: 1fr;
             }
+
+            .forwarding-options { grid-template-columns: 1fr; }
+            .calendar-map-row { grid-template-columns: 1fr; }
+            .calendar-organization-options { grid-template-columns: 1fr; }
 
             .settings-card {
                 grid-template-columns: 32px minmax(0, 1fr);
@@ -409,6 +455,7 @@
         'google_tts_error',
         'twilio_number_error',
         'appointment_error',
+        'settings_error',
     ] as $errorKey)
         @if (session($errorKey))
             <div class="card" style="margin-bottom:18px;border-color:#fecaca;background:#fef2f2;color:#991b1b;font-weight:800;">
@@ -439,6 +486,12 @@
             <button class="settings-card" type="button" data-settings-card="notificaciones" data-settings-search="notificaciones recordatorios sms llamadas citas agenda clientes">
                 <span class="settings-card-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></span>
                 <span><b>Notificaciones</b><span>Activa recordatorios por SMS o llamada para cada cita.</span></span>
+                <span class="settings-arrow">&rsaquo;</span>
+            </button>
+
+            <button class="settings-card" type="button" data-settings-card="google-calendar" data-settings-search="google calendar calendarios sincronizacion especialistas empleados detectar asignar">
+                <span class="settings-card-icon"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="M9 15h6M12 12v6"/></svg></span>
+                <span><b>Google Calendar</b><span>Detecta calendarios y asigna cada uno a su especialista.</span></span>
                 <span class="settings-arrow">&rsaquo;</span>
             </button>
 
@@ -507,6 +560,102 @@
                 </div>
             </article>
 
+            <article class="card" id="numero-cliente">
+                <div class="section-title">
+                    <div>
+                        <h2>Numero del cliente</h2>
+                        <span class="subtitle">Actualiza el telefono y correo despues de validar un codigo enviado al movil actual.</span>
+                    </div>
+                    <span class="status {{ ($clinic?->phone || $currentUser?->mobile_phone) ? 'ok' : 'wait' }}">{{ ($clinic?->phone || $currentUser?->mobile_phone) ? 'Configurado' : 'Pendiente' }}</span>
+                </div>
+
+                <form method="POST" action="{{ route('settings.contact-code') }}">
+                    @csrf
+                    <div class="grid-3">
+                        <div>
+                            <label for="contact_mobile_phone">Telefono movil</label>
+                            <input id="contact_mobile_phone" name="mobile_phone" value="{{ old('mobile_phone', $currentUser?->mobile_phone ?: $clinic?->phone) }}" autocomplete="tel">
+                            @error('mobile_phone') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
+                        <div>
+                            <label for="contact_email">Correo electronico</label>
+                            <input id="contact_email" name="email" type="email" value="{{ old('email', $currentUser?->email ?: $clinic?->email) }}" autocomplete="email">
+                            @error('email') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
+                        <div>
+                            <label>Movil donde llega el codigo</label>
+                            <input value="{{ $currentUser?->mobile_phone ?: 'Pendiente' }}" readonly>
+                        </div>
+                    </div>
+                    <div class="actions" style="justify-content:flex-end;margin-top:18px;">
+                        <button class="btn primary" type="submit">Enviar codigo SMS</button>
+                    </div>
+                </form>
+
+                @if (is_array($pendingContactChange))
+                    <form method="POST" action="{{ route('settings.contact-confirm') }}" style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px;">
+                        @csrf
+                        <div class="grid-3">
+                            <div>
+                                <label>Nuevo telefono pendiente</label>
+                                <input value="{{ $pendingContactChange['mobile_phone'] ?? 'Pendiente' }}" readonly>
+                            </div>
+                            <div>
+                                <label>Nuevo correo pendiente</label>
+                                <input value="{{ $pendingContactChange['email'] ?? 'Pendiente' }}" readonly>
+                            </div>
+                            <div>
+                                <label for="contact_code">Codigo recibido por SMS</label>
+                                <input id="contact_code" name="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
+                                @error('code') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                            </div>
+                        </div>
+                        <div class="actions" style="justify-content:flex-end;margin-top:18px;">
+                            <button class="btn primary" type="submit">Confirmar cambio</button>
+                        </div>
+                    </form>
+                @endif
+
+                <div class="grid-3" style="margin-top:18px;">
+                    <div>
+                        <label>Telefono del salon</label>
+                        <input value="{{ $clinic?->phone ?: 'Pendiente' }}" readonly>
+                    </div>
+                    <div>
+                        <label>Telefono del usuario</label>
+                        <input value="{{ $currentUser?->mobile_phone ?: 'Pendiente' }}" readonly>
+                    </div>
+                    <div>
+                        <label>Email de contacto</label>
+                        <input value="{{ $clinic?->email ?: ($currentUser?->email ?: 'Pendiente') }}" readonly>
+                    </div>
+                </div>
+            </article>
+
+            <article class="card integration-status-bar">
+                <div class="section-title"><h2>Estado de integraciones</h2></div>
+                <div class="item">
+                    <div><b>Twilio SMS</b><span>{{ config('services.twilio.from') ? 'Numero configurado para mensajes salientes.' : 'Agrega TWILIO_FROM en .env.' }}</span></div>
+                    <span class="status integration-status {{ config('services.twilio.from') ? 'ok' : 'wait' }}">{{ config('services.twilio.from') ? 'Activo' : 'Pendiente' }}</span>
+                </div>
+                <div class="item">
+                    <div><b>Google Calendar</b><span>{{ $clinic?->google_calendar_summary ?? 'Calendario no conectado.' }}</span></div>
+                    <span class="status integration-status {{ $clinic?->google_connected_at ? 'ok' : 'wait' }}">{{ $clinic?->google_connected_at ? 'Activo' : 'Pendiente' }}</span>
+                </div>
+                <div class="item">
+                    <div><b>Voz Twilio</b><span>Voces disponibles para la secretaria virtual: gratis, Standard, Neural y Generative.</span></div>
+                    <span class="status integration-status ok">Activo</span>
+                </div>
+                <div class="item">
+                    <div><b>Stripe</b><span>{{ $clinic?->plan?->name ? 'Plan '.$clinic->plan->name : 'Plan no asignado.' }}</span></div>
+                    <span class="status integration-status {{ in_array($clinic?->subscription_status, ['active', 'trial'], true) ? 'ok' : 'wait' }}">{{ ucfirst($clinic?->subscription_status ?? 'pendiente') }}</span>
+                </div>
+                <div class="item">
+                    <div><b>Email</b><span>{{ config('mail.default') === 'log' ? 'Los correos estan guardandose en logs.' : 'Mailer '.config('mail.default').' configurado.' }}</span></div>
+                    <span class="status integration-status {{ config('mail.default') === 'log' ? 'wait' : 'ok' }}">{{ config('mail.default') === 'log' ? 'Log' : 'Activo' }}</span>
+                </div>
+            </article>
+
             <article class="card" id="numero-asignado">
                 <div class="section-title">
                     <div>
@@ -547,6 +696,98 @@
                         </form>
                     @endif
                 </div>
+            </article>
+        </section>
+
+        <section class="settings-panel" data-settings-panel="google-calendar" data-settings-title="Google Calendar y especialistas">
+            <article class="card" id="google-calendar">
+                <div class="section-title">
+                    <div>
+                        <h2>Google Calendar y especialistas</h2>
+                        <span class="subtitle">Cada calendario puede representar la agenda de un especialista distinto.</span>
+                    </div>
+                    <span class="status {{ $clinic?->google_connected_at ? 'ok' : 'wait' }}">
+                        {{ $clinic?->google_connected_at ? 'Conectado' : ($clinic?->google_ever_synced_at ? 'Desconectado' : 'Sin conectar') }}
+                    </span>
+                </div>
+
+                @if (! $clinic?->google_connected_at)
+                    <p class="subtitle" style="margin-top:14px;">Conecta la cuenta de Google para detectar sus calendarios. Las citas ya importadas permaneceran visibles si luego desconectas la cuenta.</p>
+                    <div class="actions" style="margin-top:18px;">
+                        <a class="btn primary" href="{{ route('google-calendar.connect') }}">Conectar Google Calendar</a>
+                    </div>
+                @else
+                    <div class="grid-3" style="margin-top:16px;">
+                        <div><label>Cuenta conectada</label><input value="{{ $clinic->google_calendar_summary ?: 'Google Calendar' }}" readonly></div>
+                        <div><label>Ultima sincronizacion</label><input value="{{ $clinic->google_last_synced_at?->timezone($timezone)->format('d/m/Y H:i') ?: 'Pendiente' }}" readonly></div>
+                        <div><label>Calendarios detectados</label><input value="{{ $googleCalendarMappings->where('is_available', true)->count() }}" readonly></div>
+                    </div>
+
+                    <form class="calendar-organization" method="POST" action="{{ route('google-calendar.organize') }}">
+                        @csrf
+                        <h3>¿Cómo quieres organizar Google Calendar?</h3>
+                        <div class="calendar-organization-options">
+                            <label class="calendar-organization-option">
+                                <input type="radio" name="organization_mode" value="per_specialist" @checked($clinic->google_calendar_organization_mode === 'per_specialist') required>
+                                <span><b>Un calendario por especialista</b><span class="calendar-recommended">Recomendado</span><span>Creamos y asignamos automáticamente las agendas que falten.</span></span>
+                            </label>
+                            <label class="calendar-organization-option">
+                                <input type="radio" name="organization_mode" value="single" @checked($clinic->google_calendar_organization_mode === 'single') required>
+                                <span><b>Un único calendario para todo el salón</b><span>Todas las citas se sincronizan con el calendario principal.</span></span>
+                            </label>
+                            <label class="calendar-organization-option">
+                                <input type="radio" name="organization_mode" value="existing" @checked($clinic->google_calendar_organization_mode === 'existing') required>
+                                <span><b>Asignar calendarios existentes</b><span>Detectamos los calendarios de Google para que los relaciones manualmente.</span></span>
+                            </label>
+                        </div>
+                        <div class="actions" style="justify-content:flex-end;margin-top:14px;"><button class="btn primary" type="submit">Guardar y configurar</button></div>
+                    </form>
+
+                    <div class="actions" style="margin-top:18px;">
+                        <form method="POST" action="{{ route('google-calendar.detect') }}">@csrf<button class="btn primary" type="submit">Detectar calendarios</button></form>
+                        <form method="POST" action="{{ route('google-calendar.sync') }}">@csrf<button class="btn" type="submit">Sincronizar ahora</button></form>
+                        <form method="POST" action="{{ route('google-calendar.disconnect') }}" onsubmit="return confirm('¿Desconectar Google Calendar? Las citas importadas no se borraran.');">@csrf<button class="btn" type="submit">Desconectar</button></form>
+                    </div>
+
+                    @if (! $clinic->google_calendar_organization_mode)
+                        <div class="forwarding-guide"><b>Elige cómo organizar las agendas</b>No sincronizaremos citas hasta que confirmes una de las opciones anteriores.</div>
+                    @elseif ($clinic->google_calendar_organization_mode === 'single')
+                        <div class="forwarding-guide"><b>Calendario único activo</b>Todas las especialistas comparten el calendario principal de la cuenta conectada.</div>
+                    @elseif ($googleCalendarMappings->isEmpty())
+                        <div class="forwarding-guide"><b>Aun no hemos detectado calendarios</b>Pulsa “Detectar calendarios” y luego asigna cada calendario al especialista correspondiente.</div>
+                    @else
+                        <form method="POST" action="{{ route('google-calendar.mappings.update') }}">
+                            @csrf
+                            @method('PUT')
+                            <div class="calendar-map-list">
+                                @foreach ($googleCalendarMappings as $mapping)
+                                    <div class="calendar-map-row" style="{{ $mapping->is_available ? '' : 'opacity:.58;' }}">
+                                        <div class="calendar-map-name">
+                                            <b>{{ $mapping->google_calendar_name }} {{ $mapping->is_primary ? '(principal)' : '' }}</b>
+                                            <span>{{ $mapping->is_available ? 'Detectado en Google' : 'Ya no esta disponible en Google' }} · Acceso: {{ $mapping->access_role ?: 'sin identificar' }}</span>
+                                        </div>
+                                        <div>
+                                            <label for="calendar_stylist_{{ $mapping->id }}">Especialista</label>
+                                            <select id="calendar_stylist_{{ $mapping->id }}" name="calendars[{{ $mapping->id }}][stylist_id]" {{ $mapping->is_available ? '' : 'disabled' }}>
+                                                <option value="">Google interno (sin asignar)</option>
+                                                @foreach ($googleStylists as $stylist)
+                                                    <option value="{{ $stylist->id }}" @selected($mapping->stylist_id === $stylist->id)>{{ $stylist->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <label class="calendar-map-enabled">
+                                            <input type="hidden" name="calendars[{{ $mapping->id }}][enabled]" value="0">
+                                            <input type="checkbox" name="calendars[{{ $mapping->id }}][enabled]" value="1" @checked($mapping->is_enabled) {{ $mapping->is_available ? '' : 'disabled' }}>
+                                            Sincronizar
+                                        </label>
+                                    </div>
+                                @endforeach
+                            </div>
+                            <div class="forwarding-guide"><b>Como funciona la asignacion</b>Las citas de cada calendario se colocaran con el especialista elegido. Los calendarios sin asignar se mostraran bajo el personal interno “Google” y nunca se ofreceran a los clientes.</div>
+                            <div class="actions" style="justify-content:flex-end;margin-top:18px;"><button class="btn primary" type="submit">Guardar asignaciones</button></div>
+                        </form>
+                    @endif
+                @endif
             </article>
         </section>
 
@@ -620,31 +861,89 @@
         </section>
 
         <section class="settings-panel" data-settings-panel="servicios" data-settings-title="Configuracion de servicios">
-            <article class="card">
+            <article class="card" id="desvio-llamadas">
                 <div class="section-title">
                     <div>
-                        <h2>Configuracion de servicios</h2>
-                        <span class="subtitle">Catalogo, duraciones, precios y equipo.</span>
+                        <h2>Activa a Nora en tu linea habitual</h2>
+                        <span class="subtitle">Elige cuando quieres desviar las llamadas y te enviaremos por SMS exactamente lo que debes marcar.</span>
                     </div>
-                    <a class="btn primary" href="/personal/servicios">Abrir servicios</a>
+                    <span class="status {{ $callForwardingSent ? 'ok' : 'wait' }}">{{ $callForwardingSent ? 'Instrucciones enviadas' : 'Paso inicial' }}</span>
                 </div>
-                <div class="settings-link-list">
-                    <div class="settings-link-row">
-                        <div>
-                            <b>Servicios del salon</b>
-                            <span>Crea servicios, precios, duraciones y estados activos.</span>
-                        </div>
-                        <a class="btn" href="/personal/servicios">Gestionar</a>
+
+                <form method="POST" action="{{ route('settings.call-forwarding-instructions') }}">
+                    @csrf
+                    <div class="forwarding-options">
+                        <label class="forwarding-option recommended">
+                            <input type="radio" name="mode" value="no_answer" @checked(old('mode', $callForwardingMode) === 'no_answer')>
+                            <span class="forwarding-option-body"><b>Cuando no contesten</b><span>El telefono del salon suena primero. Si nadie responde, Nora atiende la llamada.</span></span>
+                        </label>
+                        <label class="forwarding-option">
+                            <input type="radio" name="mode" value="always" @checked(old('mode', $callForwardingMode) === 'always')>
+                            <span class="forwarding-option-body"><b>Todas las llamadas</b><span>Nora atiende desde el primer momento, sin hacer sonar antes la linea habitual.</span></span>
+                        </label>
+                        <label class="forwarding-option">
+                            <input type="radio" name="mode" value="busy_unreachable" @checked(old('mode', $callForwardingMode) === 'busy_unreachable')>
+                            <span class="forwarding-option-body"><b>Ocupado, apagado o sin cobertura</b><span>Nora entra cuando la linea comunica o el movil no esta disponible.</span></span>
+                        </label>
+                        <label class="forwarding-option">
+                            <input type="radio" name="mode" value="outside_hours" @checked(old('mode', $callForwardingMode) === 'outside_hours')>
+                            <span class="forwarding-option-body"><b>Noches y fines de semana</b><span>Recibes los codigos para activar al cerrar y desactivar al abrir. La programacion automatica depende del operador.</span></span>
+                        </label>
+                        <label class="forwarding-option">
+                            <input type="radio" name="mode" value="operator_help" @checked(old('mode', $callForwardingMode) === 'operator_help')>
+                            <span class="forwarding-option-body"><b>Mi operador no acepta codigos</b><span>Te enviamos el numero de destino y las instrucciones para solicitar el desvio al operador.</span></span>
+                        </label>
                     </div>
-                    <div class="settings-link-row">
+
+                    <div class="grid-3" style="margin-top:18px;">
                         <div>
-                            <b>Personal</b>
-                            <span>Horarios, estilistas y asignacion de servicios.</span>
+                            <label>País detectado</label>
+                            <input value="{{ $forwardingService->countryName($callForwardingCountry) }}" readonly>
+                            <small style="display:block;margin-top:6px;color:var(--muted);">Detectado mediante el prefijo del teléfono del salón.</small>
                         </div>
-                        <a class="btn" href="/personal">Gestionar</a>
+                        <div>
+                            <label for="forwarding_operator">Operador de la línea del salón</label>
+                            <select id="forwarding_operator" name="operator" required>
+                                @foreach ($callForwardingOperators as $operatorCode => $operatorName)
+                                    <option value="{{ $operatorCode }}" @selected(old('operator', $callForwardingOperator) === $operatorCode)>{{ $operatorName }}</option>
+                                @endforeach
+                            </select>
+                            @error('operator') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
+                        <div data-forwarding-delay>
+                            <label for="forwarding_ring_seconds">Tiempo antes de que responda Nora</label>
+                            <select id="forwarding_ring_seconds" name="ring_seconds">
+                                @foreach ([15 => '15 segundos (3-4 tonos)', 20 => '20 segundos (4-5 tonos)', 25 => '25 segundos (5-6 tonos)', 30 => '30 segundos (6 tonos aprox.)'] as $seconds => $label)
+                                    <option value="{{ $seconds }}" @selected((int) old('ring_seconds', $callForwardingSeconds) === $seconds)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label>Numero de Secretary365</label>
+                            <input value="{{ $clinic?->twilio_phone_number ?? 'Asigna primero un numero' }}" readonly>
+                        </div>
+                        <div>
+                            <label for="forwarding_recipient">Movil que recibe las instrucciones</label>
+                            <input id="forwarding_recipient" name="recipient" value="{{ old('recipient', $notificationPreferences['call_forwarding_recipient'] ?? $currentUser?->mobile_phone ?? $clinic?->phone) }}" autocomplete="tel" placeholder="+34 600 000 000">
+                            @error('recipient') <div class="danger" style="margin-top:8px;">{{ $message }}</div> @enderror
+                        </div>
                     </div>
-                </div>
+
+                    <div class="forwarding-guide">
+                        <b>Que hacer cuando llegue el SMS</b>
+                        1. Confirma que el país y el operador indicados son correctos. 2. Abre la aplicación Teléfono en el móvil del salón. 3. Marca la secuencia recibida y pulsa llamar. 4. Espera la confirmación y haz una llamada de prueba. Si el operador no admite códigos, el SMS te indicará cómo solicitarlo sin arriesgar una configuración incorrecta.
+                    </div>
+
+                    <div class="actions" style="justify-content:flex-end;margin-top:18px;">
+                        @if ($clinic?->twilio_phone_number)
+                            <button class="btn primary" type="submit">Enviar instrucciones por SMS</button>
+                        @else
+                            <span class="btn">Asigna primero tu numero en Informacion del negocio</span>
+                        @endif
+                    </div>
+                </form>
             </article>
+
         </section>
 
         <section class="settings-panel" data-settings-panel="avanzadas" data-settings-title="Opciones avanzadas">
@@ -665,13 +964,17 @@
                         <div class="item" style="align-items:center;">
                             <div>
                                 <b>{{ $voice['name'] }}</b>
-                                <span>{{ $voice['description'] }} @if (! empty($voice['badge'])) - {{ $voice['badge'] }} @endif</span>
+                                <span>{{ $voice['description'] }} @if (! empty($voice['gender'])) · {{ $voice['gender'] }} @endif @if (! empty($voice['badge'])) · {{ $voice['badge'] }} @endif</span>
                             </div>
                             <div class="actions" style="margin:0;">
                                 <span class="status integration-status {{ $isActiveVoice ? 'ok' : 'wait' }}">{{ $isActiveVoice ? 'Activa' : 'Disponible' }}</span>
                                 @if ($canPreview)
                                     @if ($isTwilioVoice)
-                                        <button class="btn js-twilio-voice-preview" type="button" data-preview-text="Hola, soy la secretaria virtual del salon. Puedo ayudarte a confirmar, cambiar o reservar una cita.">Escuchar prueba</button>
+                                        <form method="POST" action="{{ route('secretary-voice.preview-call') }}">
+                                            @csrf
+                                            <input type="hidden" name="voice" value="{{ $voiceId }}">
+                                            <button class="btn" type="submit">Probar llamada</button>
+                                        </form>
                                     @else
                                         <button class="btn js-google-voice-preview" type="button" data-preview-url="{{ route('secretary-voice.preview', ['voice' => $voiceId]) }}">Escuchar prueba</button>
                                     @endif
@@ -740,6 +1043,14 @@
         const settingsShell = document.querySelector('.settings-shell');
         const settingsBack = document.querySelector('.settings-back');
         const settingsDetailTitle = document.getElementById('settings-detail-title');
+        const forwardingModeInputs = Array.from(document.querySelectorAll('input[name="mode"]'));
+        const forwardingDelay = document.querySelector('[data-forwarding-delay]');
+        const syncForwardingDelay = () => {
+            const selectedMode = forwardingModeInputs.find((input) => input.checked)?.value;
+            if (forwardingDelay) forwardingDelay.hidden = selectedMode !== 'no_answer';
+        };
+        forwardingModeInputs.forEach((input) => input.addEventListener('change', syncForwardingDelay));
+        syncForwardingDelay();
 
         function showSettingsPanel(panelName) {
             settingsCards.forEach((card) => card.classList.toggle('active', card.dataset.settingsCard === panelName));
@@ -800,31 +1111,11 @@
         let secretaryVoiceAudio = null;
 
         function stopSecretaryVoicePreview() {
-            window.speechSynthesis?.cancel();
-
             if (secretaryVoiceAudio) {
                 secretaryVoiceAudio.pause();
                 secretaryVoiceAudio.currentTime = 0;
             }
         }
-
-        document.querySelectorAll('.js-twilio-voice-preview').forEach((button) => {
-            button.addEventListener('click', () => {
-                if (!('speechSynthesis' in window)) {
-                    alert('Tu navegador no permite escuchar esta prueba.');
-                    return;
-                }
-
-                stopSecretaryVoicePreview();
-
-                const utterance = new SpeechSynthesisUtterance(button.dataset.previewText || '');
-                utterance.lang = 'es-US';
-                utterance.rate = 1;
-                utterance.pitch = 1;
-
-                window.speechSynthesis.speak(utterance);
-            });
-        });
 
         document.querySelectorAll('.js-google-voice-preview').forEach((button) => {
             button.addEventListener('click', async () => {
@@ -840,7 +1131,8 @@
                     });
 
                     if (!response.ok) {
-                        throw new Error('No se pudo generar la prueba.');
+                        const errorMessage = await response.text();
+                        throw new Error(errorMessage || 'No se pudo generar la prueba.');
                     }
 
                     const audioBlob = await response.blob();

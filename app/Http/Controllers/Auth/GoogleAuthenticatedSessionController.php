@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\CallForwardingOnboardingService;
 use Google\Client as GoogleClient;
 use Google\Service\Oauth2;
 use Illuminate\Http\RedirectResponse;
@@ -24,7 +25,7 @@ class GoogleAuthenticatedSessionController extends Controller
         return redirect()->away($client->createAuthUrl());
     }
 
-    public function callback(Request $request): RedirectResponse
+    public function callback(Request $request, CallForwardingOnboardingService $onboarding): RedirectResponse
     {
         $expectedState = $request->session()->pull('google_login_oauth_state');
 
@@ -52,9 +53,15 @@ class GoogleAuthenticatedSessionController extends Controller
             return redirect('/login')->withErrors(['email' => 'Tu cuenta de Google no devolvio un correo valido.']);
         }
 
-        $user = User::query()->where('google_id', $googleUser->getId())
+        $user = User::withTrashed()->where('google_id', $googleUser->getId())
             ->orWhere('email', $email)
             ->first();
+
+        if ($user && ($user->trashed() || ! $user->is_active)) {
+            return redirect('/login')->withErrors([
+                'email' => 'Esta cuenta está deshabilitada. Contacta con el administrador.',
+            ]);
+        }
 
         if (! $user) {
             $user = User::create([
@@ -63,6 +70,7 @@ class GoogleAuthenticatedSessionController extends Controller
                 'google_id' => $googleUser->getId(),
                 'avatar_url' => $googleUser->getPicture(),
                 'email_verified_at' => now(),
+                'is_active' => true,
             ]);
         } else {
             $user->forceFill([
@@ -75,7 +83,7 @@ class GoogleAuthenticatedSessionController extends Controller
         Auth::login($user, true);
         $request->session()->regenerate();
 
-        return redirect()->intended('/consola');
+        return redirect()->intended($onboarding->destinationFor($user));
     }
 
     private function client(): GoogleClient

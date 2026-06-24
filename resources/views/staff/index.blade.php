@@ -8,6 +8,27 @@
 @endsection
 
 @section('content')
+    <style>
+        .workday-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: var(--ink);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        input[type="checkbox"] {
+            accent-color: #1d4ed8;
+            outline: 0;
+            box-shadow: none;
+        }
+    </style>
     @if (session('staff_status'))
         <div class="card" style="margin-bottom:18px;border-color:#bbf7d0;background:#f0fdf4;color:#166534;font-weight:800;">
             {{ session('staff_status') }}
@@ -75,7 +96,7 @@
                 <label>Dias de trabajo</label>
                 <div class="actions" style="gap:8px;">
                     @foreach ($workDays as $dayKey => $dayLabel)
-                        <label class="status info" style="cursor:pointer;">
+                        <label class="workday-check">
                             <input type="checkbox" name="work_days[]" value="{{ $dayKey }}" @checked(in_array($dayKey, old('work_days', ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']), true)) style="width:auto;min-height:auto;margin-right:6px;">
                             {{ $dayLabel }}
                         </label>
@@ -132,6 +153,9 @@
                         <tr>
                             <td>
                                 <input form="stylist-form-{{ $stylist->id }}" name="name" value="{{ old('name', $stylist->name) }}" required>
+                                @if($stylist->is_internal && ! $clinic->google_connected_at)
+                                    <span class="status wait" style="display:inline-block;margin-top:8px;">Google desconectado</span>
+                                @endif
                                 <input form="stylist-form-{{ $stylist->id }}" name="specialty" value="{{ old('specialty', $stylist->specialty) }}" placeholder="Especialidad" style="margin-top:8px;">
                             </td>
                             <td>
@@ -145,7 +169,7 @@
                             <td>
                                 <div class="actions" style="gap:6px;margin-bottom:8px;">
                                     @foreach ($workDays as $dayKey => $dayLabel)
-                                        <label class="status info" style="cursor:pointer;">
+                                        <label class="workday-check">
                                             <input form="stylist-form-{{ $stylist->id }}" type="checkbox" name="work_days[]" value="{{ $dayKey }}" @checked(in_array($dayKey, $stylist->work_days ?? [], true)) style="width:auto;min-height:auto;margin-right:6px;">
                                             {{ substr($dayLabel, 0, 3) }}
                                         </label>

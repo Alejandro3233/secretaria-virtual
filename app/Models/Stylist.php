@@ -19,11 +19,13 @@ class Stylist extends Model
         'work_starts_at',
         'work_ends_at',
         'is_active',
+        'is_internal',
     ];
 
     protected $casts = [
         'work_days' => 'array',
         'is_active' => 'boolean',
+        'is_internal' => 'boolean',
     ];
 
     public function clinic(): BelongsTo

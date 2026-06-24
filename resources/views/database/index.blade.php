@@ -2,7 +2,7 @@
 
 @section('title', 'Base de datos - Secretaria Virtual')
 @section('page_title', 'Base de datos')
-@section('page_subtitle', 'Panel exclusivo para super admin. Visualiza y edita registros principales del sistema.')
+@section('page_subtitle', 'Panel exclusivo para super admin. Visualiza todas las tablas y edita los registros principales del sistema.')
 @section('page_actions')
     <a class="btn" href="/consola">Volver a consola</a>
 @endsection
@@ -86,7 +86,9 @@
         <section class="card" style="overflow:auto;">
             <div class="section-title">
                 <h2>{{ $table }}</h2>
-                <span class="subtitle">Mostrando hasta 100 registros</span>
+                <span class="subtitle">
+                    Mostrando hasta 100 registros - {{ $isEditable ? 'Edicion habilitada' : 'Solo lectura' }}
+                </span>
             </div>
 
             <table class="database-table">
@@ -95,29 +97,35 @@
                         @foreach ($columns as $column)
                             <th>{{ $column }}</th>
                         @endforeach
-                        @if ($table === 'users')
+                        @if ($isEditable && $table === 'users')
                             <th>Nueva contrasena</th>
                             <th>Confirmar contrasena</th>
                         @endif
-                        <th>Accion</th>
+                        @if ($isEditable)
+                            <th>Accion</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
                     @forelse ($rows as $row)
                         <tr>
-                            <form method="POST" action="/base-de-datos/{{ $table }}/{{ $row->id }}">
-                                @csrf
+                            @if ($isEditable)
+                                <form method="POST" action="/base-de-datos/{{ $table }}/{{ $row->id }}">
+                                    @csrf
+                            @endif
                                 @foreach ($columns as $column)
                                     <td>
                                         @php($value = $row->{$column})
-                                        @if (in_array($column, $lockedColumns, true))
+                                        @if (! $isEditable)
+                                            <input value="{{ $column === 'password' && $value ? '********' : $value }}" disabled>
+                                        @elseif (in_array($column, $lockedColumns, true))
                                             <input value="{{ $column === 'password' && $value ? '********' : $value }}" disabled>
                                         @else
                                             <input name="{{ $column }}" value="{{ is_bool($value) ? (int) $value : $value }}">
                                         @endif
                                     </td>
                                 @endforeach
-                                @if ($table === 'users')
+                                @if ($isEditable && $table === 'users')
                                     <td>
                                         <input name="new_password" type="password" placeholder="Dejar vacio para no cambiar">
                                     </td>
@@ -125,26 +133,30 @@
                                         <input name="new_password_confirmation" type="password" placeholder="Repetir nueva contrasena">
                                     </td>
                                 @endif
-                                <td>
+                                @if ($isEditable)
+                                    <td>
                                     <div class="database-actions">
                                         <button class="btn primary" type="submit">Guardar</button>
-                                    <button
-                                        class="btn"
-                                        type="submit"
-                                        formaction="/base-de-datos/{{ $table }}/{{ $row->id }}/eliminar"
-                                        formmethod="POST"
-                                        onclick="return confirm('Seguro que quieres eliminar este registro de {{ $table }}? Esta accion no se puede deshacer.');"
-                                        style="border-color:#fecaca;color:#991b1b;"
-                                    >
-                                        Eliminar
-                                    </button>
+                                        <button
+                                            class="btn"
+                                            type="submit"
+                                            formaction="/base-de-datos/{{ $table }}/{{ $row->id }}/eliminar"
+                                            formmethod="POST"
+                                            onclick="return confirm('Seguro que quieres eliminar este registro de {{ $table }}? Esta accion no se puede deshacer.');"
+                                            style="border-color:#fecaca;color:#991b1b;"
+                                        >
+                                            Eliminar
+                                        </button>
                                     </div>
-                                </td>
-                            </form>
+                                    </td>
+                                @endif
+                            @if ($isEditable)
+                                </form>
+                            @endif
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ count($columns) + ($table === 'users' ? 3 : 1) }}">No hay registros en esta tabla.</td>
+                            <td colspan="{{ count($columns) + ($isEditable ? ($table === 'users' ? 3 : 1) : 0) }}">No hay registros en esta tabla.</td>
                         </tr>
                     @endforelse
                 </tbody>

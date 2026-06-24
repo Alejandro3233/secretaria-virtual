@@ -39,12 +39,14 @@ class Clinic extends Model
         'subscription_renews_at',
         'google_calendar_id',
         'google_calendar_summary',
+        'google_calendar_organization_mode',
         'google_access_token',
         'google_refresh_token',
         'google_token_expires_at',
         'google_sync_token',
         'google_connected_at',
         'google_last_synced_at',
+        'google_ever_synced_at',
         'google_tts_voice',
         'notification_preferences',
     ];
@@ -57,6 +59,7 @@ class Clinic extends Model
         'google_token_expires_at' => 'datetime',
         'google_connected_at' => 'datetime',
         'google_last_synced_at' => 'datetime',
+        'google_ever_synced_at' => 'datetime',
         'notification_preferences' => 'array',
     ];
 
@@ -128,5 +131,15 @@ class Clinic extends Model
     public function stylists(): HasMany
     {
         return $this->hasMany(Stylist::class);
+    }
+
+    public function googleCalendarMappings(): HasMany
+    {
+        return $this->hasMany(GoogleCalendarMapping::class);
+    }
+
+    public function inventoryItems(): HasMany
+    {
+        return $this->hasMany(InventoryItem::class);
     }
 }

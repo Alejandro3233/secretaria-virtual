@@ -35,7 +35,7 @@
         .announcement { padding: 9px 20px; color: #fff; background: var(--ink); text-align: center; font-size: 13px; font-weight: 600; }
         .topbar { position: sticky; top: 0; z-index: 30; border-bottom: 1px solid rgba(234, 223, 227, .9); background: rgba(255, 255, 255, .92); backdrop-filter: blur(14px); }
         .nav { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
-        .brand-logo { display: block; width: 170px; height: auto; }
+        .brand-logo { display: block; width: 230px; height: 52px; object-fit: cover; object-position: center; }
         .links { display: flex; align-items: center; gap: 28px; color: #51484d; font-size: 14px; font-weight: 600; }
         .links a:hover { color: var(--rose); }
         .actions { display: flex; align-items: center; gap: 10px; }
@@ -183,7 +183,7 @@
         @media (max-width: 720px) {
             .announcement { font-size: 12px; }
             .nav { min-height: 66px; }
-            .brand-logo { width: 145px; }
+            .brand-logo { width: 180px; height: 42px; }
             .actions .login-link { display: none; }
             .hero { padding: 58px 0; }
             .hero::before { width: 380px; height: 380px; }
@@ -213,7 +213,7 @@
     <header class="topbar">
         <div class="wrap nav">
             <a href="/" aria-label="Secretary365, inicio">
-                <img class="brand-logo" src="/logo.png" alt="Secretary365">
+                <img class="brand-logo" src="/logo-home-v2.png" alt="Secretary365">
             </a>
             <nav class="links" aria-label="Navegacion principal">
                 <a href="#ventajas">Ventajas</a>

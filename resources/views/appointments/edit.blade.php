@@ -103,9 +103,27 @@
 
         <div class="actions" style="margin-top:22px;">
             <button class="btn primary" type="submit">Guardar cambios</button>
-            <a class="btn" href="/citas">Cancelar</a>
+            <a class="btn" href="/citas">Volver</a>
         </div>
     </form>
+
+    @if (! in_array($appointment->status, ['cancelled', 'canceled'], true))
+        <form method="POST" action="/citas/{{ $appointment->id }}/cancelar" class="card" style="margin-top:18px;border-color:#d1d5db;" onsubmit="return confirm('Estas seguro de que quieres cancelar esta cita? Permanecera en el historial y se quitara de Google Calendar si estaba sincronizada.');">
+            @csrf
+            @method('PUT')
+            <div class="section-title" style="margin-bottom:0;">
+                <div>
+                    <h2>Cancelar cita</h2>
+                    <span class="subtitle">Conserva la cita en el historial con estado cancelado.</span>
+                </div>
+                <button class="btn" type="submit" style="border-color:#4b5563;color:#374151;">Cancelar cita</button>
+            </div>
+        </form>
+    @else
+        <div class="card" style="margin-top:18px;border-color:#d1d5db;background:#f3f4f6;color:#374151;font-weight:800;">
+            Esta cita esta cancelada.
+        </div>
+    @endif
 
     <form method="POST" action="/citas/{{ $appointment->id }}" class="card" style="margin-top:18px;border-color:#fecaca;" onsubmit="return confirm('Estas seguro de que quieres eliminar esta cita? Esta accion quitara la cita de la agenda y de Google Calendar si estaba sincronizada.');">
         @csrf

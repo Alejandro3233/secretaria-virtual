@@ -38,6 +38,10 @@ return [
     'twilio' => [
         'account_sid' => env('TWILIO_ACCOUNT_SID'),
         'auth_token' => env('TWILIO_AUTH_TOKEN'),
+        'api_key_sid' => env('TWILIO_API_KEY_SID'),
+        'api_key_secret' => env('TWILIO_API_KEY_SECRET'),
+        'twiml_app_sid' => env('TWILIO_TWIML_APP_SID'),
+        'browser_ring_timeout' => (int) env('TWILIO_BROWSER_RING_TIMEOUT', 18),
         'from' => env('TWILIO_FROM'),
         'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
         'auto_buy_numbers' => env('TWILIO_AUTO_BUY_NUMBERS', false),

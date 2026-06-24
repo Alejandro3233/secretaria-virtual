@@ -64,7 +64,7 @@
                 <select id="client_id" name="client_id">
                     <option value="">Crear cliente nuevo</option>
                     @foreach ($clients as $client)
-                        <option value="{{ $client->id }}" @selected(old('client_id') == $client->id)>
+                        <option value="{{ $client->id }}" @selected(old('client_id', request('client_id')) == $client->id)>
                             {{ $client->first_name }} {{ $client->last_name }} - {{ $client->phone }}
                         </option>
                     @endforeach
@@ -77,12 +77,6 @@
                 <input id="client_lookup" autocomplete="off" placeholder="Escribe Maria, Lopez o +1 555...">
                 <div id="client_results" class="client-results" role="listbox" aria-label="Clientes encontrados"></div>
                 <span id="client_lookup_hint" class="subtitle" style="display:block;margin-top:8px;">Si el cliente existe, seleccionalo para cargar sus datos.</span>
-            </div>
-
-            <div>
-                <label>Estado inicial</label>
-                <div class="status wait" style="min-height:44px;align-items:center;">Pendiente</div>
-                <span class="subtitle" style="display:block;margin-top:8px;">El cliente podra confirmarla o cancelarla desde el correo.</span>
             </div>
         </section>
 

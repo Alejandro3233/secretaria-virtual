@@ -27,7 +27,11 @@ class StaffController extends Controller
 
         return view('staff.index', [
             'clinic' => $clinic,
-            'stylists' => $clinic->stylists()->with('service')->orderBy('name')->get(),
+            'stylists' => $clinic->stylists()
+                ->with('service')
+                ->when(! $clinic->google_ever_synced_at, fn ($query) => $query->where('is_internal', false))
+                ->orderBy('name')
+                ->get(),
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
             'workDays' => self::WORK_DAYS,
         ]);

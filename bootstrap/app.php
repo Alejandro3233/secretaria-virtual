@@ -3,6 +3,8 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use App\Http\Middleware\EnsureUserIsActive;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -11,12 +13,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [EnsureUserIsActive::class]);
         $middleware->validateCsrfTokens(except: [
-            'twilio/voice/incoming',
-            'twilio/voice/reminder/*',
+            'twilio/voice/*',
             'stripe/webhook',
+            'cita/*/adelantar',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->respond(function (Response $response): Response {
+            if ($response->getStatusCode() === 419 && request()->is('login')) {
+                return redirect()->route('login')->with(
+                    'status',
+                    'Tu sesión caducó. Vuelve a introducir tus datos para continuar.',
+                );
+            }
+
+            return $response;
+        });
     })->create();
