@@ -723,6 +723,100 @@
             setSidebarState(! document.documentElement.classList.contains('sidebar-collapsed'));
         });
 
+        @auth
+        const svNoraReminderDueUrl = @json(route('nora-reminders.due'));
+        const svNoraReminderRequest = async () => {
+            const response = await fetch(svNoraReminderDueUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    Accept: 'application/json',
+                },
+                cache: 'no-store',
+            });
+
+            if (! response.ok) return { reminders: [] };
+
+            return response.json();
+        };
+
+        const svSpeakNoraReminder = (message) => {
+            if (! ('speechSynthesis' in window)) return;
+
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(message);
+            utterance.lang = 'es-ES';
+            const voices = window.speechSynthesis?.getVoices?.() || [];
+            const spanishVoices = voices.filter((voice) => /^es([-_]|$)/i.test(voice.lang || ''));
+            const femaleNames = ['helena', 'monica', 'paulina', 'sabina', 'luciana', 'elvira', 'google espanol', 'laura', 'maria', 'paula', 'zira', 'aria', 'jenny', 'susan', 'samantha', 'victoria', 'karen', 'moira', 'fiona', 'lucia', 'sofia', 'soledad', 'paloma', 'camila', 'mia', 'lupe'];
+            const maleNames = ['jorge', 'diego', 'pablo', 'miguel', 'carlos', 'raul', 'juan', 'alvaro', 'enrique', 'david', 'mark', 'paul', 'daniel', 'alex'];
+            const hasName = (voice, names) => names.some((name) => voice.name.toLowerCase().includes(name));
+            const preferredVoice = spanishVoices.find((candidate) => hasName(candidate, femaleNames));
+            const anyLanguagePreferredVoice = voices.find((candidate) => hasName(candidate, femaleNames));
+            const neutralVoice = spanishVoices.find((candidate) => ! hasName(candidate, maleNames));
+            const anyLanguageNeutralVoice = voices.find((candidate) => ! hasName(candidate, maleNames));
+            const voice = preferredVoice
+                || anyLanguagePreferredVoice
+                || neutralVoice
+                || anyLanguageNeutralVoice
+                || spanishVoices[0]
+                || voices[0]
+                || null;
+            utterance.rate = 0.99;
+            utterance.pitch = 1.18;
+            if (voice) utterance.voice = voice;
+            window.speechSynthesis.speak(utterance);
+        };
+
+        const svPlayNoraReminderTone = () => {
+            const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+            if (! AudioContextApi) return;
+
+            try {
+                const context = new AudioContextApi();
+                const gain = context.createGain();
+                gain.gain.setValueAtTime(0.0001, context.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 1.15);
+                gain.connect(context.destination);
+
+                [0, 0.24, 0.48].forEach((offset) => {
+                    const oscillator = context.createOscillator();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(880, context.currentTime + offset);
+                    oscillator.connect(gain);
+                    oscillator.start(context.currentTime + offset);
+                    oscillator.stop(context.currentTime + offset + 0.15);
+                });
+
+                window.setTimeout(() => context.close(), 1400);
+            } catch (error) {
+                // Algunos navegadores bloquean audio hasta que el usuario interactua con la pagina.
+            }
+        };
+
+        const svCheckNoraReminders = async () => {
+            try {
+                const payload = await svNoraReminderRequest();
+                (payload.reminders || []).forEach((reminder) => {
+                    const message = 'Recordatorio: '.concat(reminder.message || 'tu recordatorio', '.');
+                    svPlayNoraReminderTone();
+                    svSpeakNoraReminder(message);
+                    window.setTimeout(() => window.alert(message), 450);
+                });
+            } catch (error) {
+                // El backend conserva el recordatorio para el siguiente intento.
+            }
+        };
+
+        svCheckNoraReminders();
+        window.setInterval(svCheckNoraReminders, 30000);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') svCheckNoraReminders();
+        });
+        @endauth
+
         const consoleCallIndicator = document.querySelector('[data-console-call-indicator]');
         const consoleHotCallAlert = document.querySelector('[data-hot-call-alert]');
         const consoleHotCallTitle = document.querySelector('[data-hot-call-title]');

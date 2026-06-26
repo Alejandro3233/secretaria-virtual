@@ -58,6 +58,20 @@ class ClientController extends Controller
         return redirect()->route('clients.show', $client)->with('client_status', 'Datos del cliente actualizados.');
     }
 
+    public function notes(Request $request, Client $client, ClinicResolver $clinics): RedirectResponse
+    {
+        $clinic = $clinics->currentOrCreate($request->user());
+        $this->ensureClinic($client, $clinic->id);
+
+        $data = $request->validate([
+            'notes' => ['nullable', 'string', 'max:3000'],
+        ]);
+
+        $client->update(['notes' => $data['notes'] ?? null]);
+
+        return redirect()->route('clients.show', $client)->with('client_status', 'Notas del cliente actualizadas.');
+    }
+
     public function attendance(Request $request, Client $client, Appointment $appointment, ClinicResolver $clinics): RedirectResponse
     {
         $clinic = $clinics->currentOrCreate($request->user());

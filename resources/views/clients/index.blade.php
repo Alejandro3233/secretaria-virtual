@@ -53,6 +53,8 @@
     .client-details { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
     .client-detail-card, .history-card { border:1px solid var(--line); border-radius:9px; padding:16px; }
     .client-detail-card h3, .history-card h3 { margin:0 0 12px; font-size:16px; }
+    .client-note-form textarea { width:100%; min-height:126px; border:1px solid #dbcbd4; border-radius:6px; padding:11px; resize:vertical; line-height:1.45; }
+    .client-note-form .actions { justify-content:flex-end; margin-top:10px; }
     .detail-line { display:grid; grid-template-columns:105px 1fr; gap:10px; padding:7px 0; border-bottom:1px solid #f4edf1; }
     .detail-line:last-child { border:0; }
     .detail-line span { color:var(--muted); font-size:12px; font-weight:800; }
@@ -145,7 +147,17 @@
                     <div class="detail-line"><span>Email</span><b>{{ $selectedClient->email ?: 'Sin registrar' }}</b></div>
                     <div class="detail-line"><span>Dirección</span><b>{{ $selectedClient->address ?: 'Sin registrar' }}</b></div>
                 </article>
-                <article class="client-detail-card"><h3>Notas</h3><div style="color:var(--muted);line-height:1.55;white-space:pre-line;">{{ $selectedClient->notes ?: 'No hay notas registradas para este cliente.' }}</div></article>
+                <article class="client-detail-card">
+                    <h3>Notas del cliente</h3>
+                    <form class="client-note-form" method="POST" action="{{ route('clients.notes', $selectedClient) }}">
+                        @csrf
+                        @method('PUT')
+                        <label for="client_notes">Notas internas</label>
+                        <textarea id="client_notes" name="notes" maxlength="3000" placeholder="Ejemplo: Es alérgica a un medicamento, prefiere productos sin fragancia, no llamar antes de las 10:00.">{{ old('notes', $selectedClient->notes) }}</textarea>
+                        @error('notes')<div class="danger" style="margin-top:8px;">{{ $message }}</div>@enderror
+                        <div class="actions"><button class="btn primary" type="submit">Guardar notas</button></div>
+                    </form>
+                </article>
             </section>
 
             <section class="history-card">

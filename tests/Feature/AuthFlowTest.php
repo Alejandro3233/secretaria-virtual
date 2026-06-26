@@ -921,14 +921,61 @@ class AuthFlowTest extends TestCase
 
         $this->assertDatabaseHas('clients', [
             'clinic_id' => $clinic->id,
+            'first_name' => 'Laura',
+            'last_name' => 'Perez',
             'phone' => '+15550001',
+            'email' => 'laura@example.com',
         ]);
+        $this->actingAs($user)
+            ->get('/clientes')
+            ->assertOk()
+            ->assertSee('Laura Perez')
+            ->assertSee('+15550001');
         $this->assertDatabaseHas('appointments', [
             'clinic_id' => $clinic->id,
             'service_id' => $service->id,
             'stylist_id' => $stylist->id,
             'source' => 'web',
             'google_sync_status' => 'pending',
+        ]);
+    }
+
+    public function test_schedule_creates_new_client_when_new_client_fields_replace_selected_client(): void
+    {
+        $user = User::factory()->create();
+        $clinic = Clinic::create(['name' => 'Salon Test']);
+        $user->clinics()->attach($clinic->id, ['role' => 'owner']);
+        $existing = Client::create([
+            'clinic_id' => $clinic->id,
+            'first_name' => 'Rafael',
+            'last_name' => 'Rodriguez',
+            'phone' => '+12138697308',
+        ]);
+
+        $this->actingAs($user)
+            ->post('/agenda/nueva-cita', [
+                'client_id' => $existing->id,
+                'client_first_name' => 'Ana',
+                'client_last_name' => 'Lopez',
+                'client_phone' => '+12135550124',
+                'client_email' => 'ana@example.com',
+                'starts_at' => now()->addDay()->setTime(11, 0)->format('Y-m-d H:i:s'),
+                'duration_minutes' => 45,
+                'reason' => 'Tratamiento',
+            ])
+            ->assertRedirect('/agenda');
+
+        $ana = Client::query()->where('clinic_id', $clinic->id)->where('phone', '+12135550124')->firstOrFail();
+        $this->assertSame('Ana', $ana->first_name);
+        $this->assertDatabaseHas('appointments', [
+            'clinic_id' => $clinic->id,
+            'client_id' => $ana->id,
+            'reason' => 'Tratamiento',
+        ]);
+        $this->assertDatabaseMissing('appointments', [
+            'clinic_id' => $clinic->id,
+            'client_id' => $existing->id,
+            'reason' => 'Tratamiento',
         ]);
     }
 

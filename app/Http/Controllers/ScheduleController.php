@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ScheduleController extends Controller
@@ -231,6 +232,7 @@ class ScheduleController extends Controller
         }
 
         $client = $this->resolveClient($clinic, $data);
+        $createdClient = $client->wasRecentlyCreated;
 
         $appointment = $appointments->create($clinic, [
             'client_id' => $client->id,
@@ -250,6 +252,9 @@ class ScheduleController extends Controller
         $message = $appointment->google_sync_status === 'synced'
             ? 'Cita creada y sincronizada con Google Calendar.'
             : 'Cita creada. Se sincronizara con Google Calendar cuando haya conexion activa.';
+        if ($createdClient) {
+            $message .= ' Cliente nuevo guardado en Clientes.';
+        }
 
         return redirect('/agenda')->with('google_calendar_status', $message);
     }
@@ -344,23 +349,57 @@ class ScheduleController extends Controller
     private function resolveClient($clinic, array $data): Client
     {
         if (! empty($data['client_id'])) {
-            return Client::query()
+            $selectedClient = Client::query()
                 ->where('clinic_id', $clinic->id)
                 ->findOrFail($data['client_id']);
+
+            if (! $this->newClientFieldsDifferFrom($selectedClient, $data)) {
+                return $selectedClient;
+            }
+
+            if (blank($data['client_first_name'] ?? null) || blank($data['client_phone'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'client_first_name' => 'Completa nombre y telefono para guardar un cliente nuevo.',
+                    'client_phone' => 'Completa nombre y telefono para guardar un cliente nuevo.',
+                ]);
+            }
         }
 
         return Client::query()->firstOrCreate(
             [
                 'clinic_id' => $clinic->id,
-                'phone' => $data['client_phone'],
+                'phone' => trim((string) $data['client_phone']),
             ],
             [
-                'first_name' => $data['client_first_name'],
-                'last_name' => $data['client_last_name'] ?? null,
-                'email' => $data['client_email'] ?? null,
+                'first_name' => trim((string) $data['client_first_name']),
+                'last_name' => filled($data['client_last_name'] ?? null) ? trim((string) $data['client_last_name']) : null,
+                'email' => filled($data['client_email'] ?? null) ? trim((string) $data['client_email']) : null,
                 'notification_preference' => 'both',
             ]
         );
+    }
+
+    private function newClientFieldsDifferFrom(Client $client, array $data): bool
+    {
+        $submitted = [
+            'first_name' => trim((string) ($data['client_first_name'] ?? '')),
+            'last_name' => trim((string) ($data['client_last_name'] ?? '')),
+            'phone' => trim((string) ($data['client_phone'] ?? '')),
+            'email' => trim((string) ($data['client_email'] ?? '')),
+        ];
+
+        if (implode('', $submitted) === '') {
+            return false;
+        }
+
+        $current = [
+            'first_name' => trim((string) $client->first_name),
+            'last_name' => trim((string) $client->last_name),
+            'phone' => trim((string) $client->phone),
+            'email' => trim((string) $client->email),
+        ];
+
+        return $submitted !== $current;
     }
 
     private function abortIfForeignServiceOrStylist(int $clinicId, array $data): void

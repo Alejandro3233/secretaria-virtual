@@ -49,6 +49,21 @@ class ClientManagementTest extends TestCase
             ->assertOk()->assertSee('Asistió')->assertSee('$35.00');
     }
 
+    public function test_client_notes_can_be_updated_from_client_profile(): void
+    {
+        [$user, $clinic] = $this->clinicUser();
+        $client = Client::query()->create(['clinic_id' => $clinic->id, 'first_name' => 'Ana', 'phone' => '+34600111222']);
+
+        $this->actingAs($user)
+            ->put(route('clients.notes', $client), ['notes' => 'Es alergica a un medicamento.'])
+            ->assertRedirect(route('clients.show', $client));
+
+        $this->assertSame('Es alergica a un medicamento.', $client->fresh()->notes);
+        $this->actingAs($user)->get(route('clients.show', $client))
+            ->assertOk()
+            ->assertSee('Es alergica a un medicamento.');
+    }
+
     public function test_clients_from_another_clinic_are_not_accessible(): void
     {
         [$user] = $this->clinicUser();

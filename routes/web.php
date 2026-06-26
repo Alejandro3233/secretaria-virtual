@@ -14,6 +14,8 @@ use App\Http\Controllers\DailyBriefingController;
 use App\Http\Controllers\GoogleCalendarController;
 use App\Http\Controllers\GoogleTextToSpeechController;
 use App\Http\Controllers\ManagerController;
+use App\Http\Controllers\NoraClientCallController;
+use App\Http\Controllers\NoraReminderController;
 use App\Http\Controllers\PublicBookingController;
 use App\Http\Controllers\PublicRescheduleController;
 use App\Http\Controllers\ScheduleController;
@@ -70,6 +72,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/clientes/{client}', [ClientController::class, 'show'])->name('clients.show');
     Route::get('/clientes/{client}/editar', [ClientController::class, 'edit'])->name('clients.edit');
     Route::put('/clientes/{client}', [ClientController::class, 'update'])->name('clients.update');
+    Route::put('/clientes/{client}/notas', [ClientController::class, 'notes'])->name('clients.notes');
     Route::put('/clientes/{client}/clasificacion', [ClientController::class, 'loyalty'])->name('clients.loyalty');
     Route::put('/clientes/{client}/citas/{appointment}/asistencia', [ClientController::class, 'attendance'])->name('clients.attendance');
 });
@@ -164,6 +167,14 @@ Route::post('/consola/optimizar/{appointment}/enviar', [ScheduleOptimizationCont
 Route::post('/consola/resumen-diario/escuchado', [DailyBriefingController::class, 'played'])
     ->middleware('auth')
     ->name('console.daily-briefing.played');
+
+Route::middleware('auth')->group(function (): void {
+    Route::post('/consola/nora/llamar-cliente', [NoraClientCallController::class, 'store'])->name('nora-client-calls.store');
+    Route::get('/nora/recordatorios', [NoraReminderController::class, 'index'])->name('nora-reminders.index');
+    Route::post('/nora/recordatorios', [NoraReminderController::class, 'store'])->name('nora-reminders.store');
+    Route::post('/nora/recordatorios/cancelar', [NoraReminderController::class, 'cancel'])->name('nora-reminders.cancel');
+    Route::post('/nora/recordatorios/vencidos', [NoraReminderController::class, 'due'])->name('nora-reminders.due');
+});
 
 Route::middleware('auth')->group(function (): void {
     Route::get('/manager', [ManagerController::class, 'index'])->name('manager.index');
@@ -409,6 +420,10 @@ Route::get('/consola', function (Request $request, ClinicResolver $clinics, Sche
         ->leftJoin('services', 'appointments.service_id', '=', 'services.id')
         ->leftJoin('stylists', 'appointments.stylist_id', '=', 'stylists.id')
         ->where('call_logs.clinic_id', $clinic->id)
+        ->where(function ($query): void {
+            $query->whereNull('call_logs.intent')
+                ->orWhere('call_logs.intent', 'appointment_lookup');
+        })
         ->where(function ($query): void {
             $query->where(function ($active): void {
                 $active->whereIn('call_logs.status', ['in-progress', 'answered'])
@@ -1008,6 +1023,8 @@ Route::post('/twilio/voice/incoming/complete', [TwilioPhoneNumberController::cla
 Route::post('/twilio/voice/reminder/{appointment}/{token}', [TwilioPhoneNumberController::class, 'reminder'])->name('twilio.voice.reminder');
 Route::post('/twilio/voice/reminder/{appointment}/{token}/choice', [TwilioPhoneNumberController::class, 'reminderChoice'])->name('twilio.voice.reminder-choice');
 Route::post('/twilio/voice/reminder/status', [TwilioPhoneNumberController::class, 'reminderStatus'])->name('twilio.voice.reminder-status');
+Route::post('/twilio/voice/client-call/{client}/{token}', [NoraClientCallController::class, 'twiml'])->name('twilio.voice.client-call');
+Route::post('/twilio/voice/client-call/status', [NoraClientCallController::class, 'status'])->name('twilio.voice.client-call-status');
 Route::get('/twilio/voice/browser/token', [TwilioPhoneNumberController::class, 'browserToken'])->middleware('auth')->name('twilio.voice.browser-token');
 Route::post('/stripe/webhook', [StripeSubscriptionController::class, 'webhook'])->name('stripe.webhook');
 

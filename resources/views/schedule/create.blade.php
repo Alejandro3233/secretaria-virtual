@@ -277,6 +277,13 @@
             clientLookupTimer = setTimeout(searchClients, 250);
         });
 
+        [clientFirstName, clientLastName, clientPhone, clientEmail].forEach((input) => {
+            input?.addEventListener('input', () => {
+                clientSelect.value = '';
+                clientLookupHint.textContent = 'Se guardara como cliente nuevo al crear la cita.';
+            });
+        });
+
         clientSelect?.addEventListener('change', () => {
             if (!clientSelect.value) {
                 clientLookup.value = '';

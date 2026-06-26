@@ -97,7 +97,7 @@
             'calls' => $reminderCallAppointments->count() > 0
                 ? 'Hay '.$reminderCallAppointments->count().' llamadas de recordatorio que puedes adelantar desde Próxima acción.'
                 : 'No hay llamadas de recordatorio pendientes para adelantar en el período seleccionado.',
-            'help' => 'Puedes pedirme el resumen del día, la próxima cita, cuántas citas hay, las ganancias previstas, los huecos de la agenda o las llamadas pendientes.',
+            'help' => 'Puedes pedirme el resumen del día, la próxima cita, cuántas citas hay, las ganancias previstas, los huecos de la agenda, las llamadas pendientes, que te recuerde algo, que liste tus recordatorios o que cancele recordatorios pendientes.',
         ];
     @endphp
 
@@ -945,6 +945,14 @@
         const noraCallActive = @json((bool) $liveCall);
         const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition;
         const noraPreferenceKey = 'secretary365-nora-listening';
+        const noraDailyHelpKey = 'secretary365-nora-help-shown-date';
+        const noraReminderRoutes = {
+            index: @json(route('nora-reminders.index')),
+            store: @json(route('nora-reminders.store')),
+            cancel: @json(route('nora-reminders.cancel')),
+            due: @json(route('nora-reminders.due')),
+        };
+        const noraClientCallRoute = @json(route('nora-client-calls.store'));
         let dailyBriefingMarked = @json((bool) $dailyBriefing->played_at);
         let noraModeEnabled = window.localStorage.getItem(noraPreferenceKey) === '1';
         let noraRecognition = null;
@@ -953,15 +961,63 @@
         let noraRestartTimer = null;
         let noraStatusTimer = null;
         let noraAwaitingCommandUntil = 0;
+        const noraReminderTimers = new Map();
 
-        const preferredSpanishVoice = () => {
+        const noraVoiceProfile = () => {
             const voices = window.speechSynthesis?.getVoices?.() || [];
             const spanishVoices = voices.filter((voice) => /^es([-_]|$)/i.test(voice.lang || ''));
-            const preferredNames = ['helena', 'mónica', 'monica', 'paulina', 'sabina', 'luciana', 'elvira', 'google español'];
+            const normalizeVoiceName = (name) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            const exactFemaleVoiceNames = ['google female'];
+            const freeFemaleNames = ['google female', 'helena', 'monica', 'paulina', 'sabina', 'luciana', 'elvira', 'google espanol', 'google español', 'laura', 'maria', 'paula', 'zira', 'aria', 'jenny', 'susan', 'samantha', 'victoria', 'karen', 'moira', 'fiona', 'lucia', 'sofia', 'soledad', 'paloma', 'camila', 'mia', 'lupe'];
+            const maleNames = ['jorge', 'diego', 'pablo', 'miguel', 'carlos', 'raul', 'juan', 'alvaro', 'enrique', 'david', 'mark', 'paul', 'daniel', 'alex', 'jorge', 'carlos', 'antonio', 'guillermo', 'mateo', 'lorenzo', 'martin', 'mario', 'hector', 'enrique', 'fernando'];
+            const hasName = (voice, names) => names.some((name) => normalizeVoiceName(voice.name || '').includes(name));
+            const hasExactName = (voice, names) => names.includes(normalizeVoiceName(voice.name || ''));
+            const isMaleVoice = (voice) => hasName(voice, maleNames);
+            const exactFemaleVoice = voices.find((voice) => hasExactName(voice, exactFemaleVoiceNames));
+            const freeSpanishFemaleVoice = spanishVoices.find((voice) => hasName(voice, freeFemaleNames));
+            const freeFemaleVoice = voices.find((voice) => hasName(voice, freeFemaleNames));
+            const neutralVoice = spanishVoices.find((voice) => ! isMaleVoice(voice));
+            const anyLanguageNeutralVoice = voices.find((voice) => ! isMaleVoice(voice));
+            const selectedVoice = exactFemaleVoice || freeSpanishFemaleVoice || freeFemaleVoice || neutralVoice || anyLanguageNeutralVoice || null;
 
-            return spanishVoices.find((voice) => preferredNames.some((name) => voice.name.toLowerCase().includes(name)))
-                || spanishVoices[0]
-                || null;
+            return {
+                voice: selectedVoice,
+                language: selectedVoice?.lang || 'es-ES',
+                pitch: 1.18,
+                rate: 0.99,
+            };
+        };
+
+        const loadNoraBrowserVoices = () => new Promise((resolve) => {
+            if (! window.speechSynthesis) {
+                resolve();
+                return;
+            }
+
+            if (window.speechSynthesis.getVoices().length) {
+                resolve();
+                return;
+            }
+
+            const finish = () => {
+                window.speechSynthesis.removeEventListener?.('voiceschanged', finish);
+                resolve();
+            };
+            window.speechSynthesis.addEventListener?.('voiceschanged', finish);
+            window.setTimeout(finish, 1500);
+        });
+
+        const describeNoraBrowserVoices = async () => {
+            await loadNoraBrowserVoices();
+            const voices = window.speechSynthesis?.getVoices?.() || [];
+            const names = voices.slice(0, 12).map((voice) => voice.name).join(', ');
+
+            if (! voices.length) {
+                speakWithNora('No encuentro voces instaladas en este navegador.');
+                return;
+            }
+
+            speakWithNora('Estas son las voces que veo disponibles: '.concat(names, '.'));
         };
 
         const markDailyBriefingPlayed = async () => {
@@ -1019,20 +1075,21 @@
             }
         };
 
-        const speakWithNora = (message, { dailyBriefing = false } = {}) => {
+        const speakWithNora = async (message, { dailyBriefing = false } = {}) => {
             if (! message || ! ('speechSynthesis' in window)) return;
 
             noraSpeaking = true;
             stopNoraRecognition();
             updateNoraListeningStatus();
+            await loadNoraBrowserVoices();
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(message);
-            utterance.lang = 'es-ES';
-            utterance.rate = 0.97;
-            utterance.pitch = 1.03;
             utterance.volume = 1;
-            const voice = preferredSpanishVoice();
-            if (voice) utterance.voice = voice;
+            const voiceProfile = noraVoiceProfile();
+            utterance.lang = voiceProfile.language;
+            utterance.rate = voiceProfile.rate;
+            utterance.pitch = voiceProfile.pitch;
+            if (voiceProfile.voice) utterance.voice = voiceProfile.voice;
 
             utterance.onstart = () => {
                 if (dailyBriefing) markDailyBriefingPlayed();
@@ -1053,11 +1110,382 @@
 
         const speakDailyBriefing = () => speakWithNora(dailyBriefingMessage, { dailyBriefing: true });
         const normalizedVoiceText = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const todayNoraHelpKey = () => new Date().toISOString().slice(0, 10);
+
+        const speakNoraFallback = () => {
+            const today = todayNoraHelpKey();
+            if (window.localStorage.getItem(noraDailyHelpKey) === today) {
+                speakWithNora('No he entendido esa petición.');
+                return;
+            }
+
+            window.localStorage.setItem(noraDailyHelpKey, today);
+            speakWithNora('No he entendido esa petición. '.concat(noraVoiceResponses.help));
+        };
+
+        const noraReminderRequest = async (url, options = {}) => {
+            const response = await fetch(url, {
+                method: options.method || 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    Accept: 'application/json',
+                    ...(options.headers || {}),
+                },
+                body: options.body ? JSON.stringify(options.body) : undefined,
+                cache: 'no-store',
+            });
+
+            if (! response.ok) {
+                const error = new Error('No se pudo completar la solicitud.');
+                try {
+                    error.payload = await response.json();
+                } catch (parseError) {}
+                throw error;
+            }
+
+            return response.json();
+        };
+
+        const normalizeNoraReminder = (reminder) => ({
+            id: reminder.id,
+            message: reminder.message,
+            dueAt: new Date(reminder.due_at || reminder.dueAt).getTime(),
+        });
+
+        const loadNoraReminders = async () => {
+            const payload = await noraReminderRequest(noraReminderRoutes.index);
+
+            return (payload.reminders || []).map(normalizeNoraReminder);
+        };
+
+        const noraReminderLabel = (reminder) => reminder.message && reminder.message !== 'recordatorio'
+            ? reminder.message
+            : 'tu recordatorio';
+
+        const playNoraReminderTone = () => {
+            const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+            if (! AudioContextApi) return;
+
+            try {
+                const context = new AudioContextApi();
+                const gain = context.createGain();
+                gain.gain.setValueAtTime(0.0001, context.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 1.15);
+                gain.connect(context.destination);
+
+                [0, 0.24, 0.48].forEach((offset) => {
+                    const oscillator = context.createOscillator();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(880, context.currentTime + offset);
+                    oscillator.connect(gain);
+                    oscillator.start(context.currentTime + offset);
+                    oscillator.stop(context.currentTime + offset + 0.15);
+                });
+
+                window.setTimeout(() => context.close(), 1400);
+            } catch (error) {
+                // El navegador puede bloquear audio si no hubo interacción reciente.
+            }
+        };
+
+        const completeNoraReminder = (reminderId) => {
+            window.clearTimeout(noraReminderTimers.get(reminderId));
+            noraReminderTimers.delete(reminderId);
+        };
+
+        const fireNoraReminder = (reminder) => {
+            completeNoraReminder(reminder.id);
+            playNoraReminderTone();
+            const message = 'Recordatorio: '.concat(noraReminderLabel(reminder), '.');
+            speakWithNora(message);
+            window.setTimeout(() => window.alert(message), 450);
+        };
+
+        const checkNoraDueReminders = async () => {
+            try {
+                const payload = await noraReminderRequest(noraReminderRoutes.due, { method: 'POST' });
+                (payload.reminders || []).map(normalizeNoraReminder).forEach(fireNoraReminder);
+            } catch (error) {
+                // Si falla la red, el backend conserva el recordatorio para el siguiente chequeo.
+            }
+        };
+
+        const scheduleNoraReminder = (reminder) => {
+            const delay = reminder.dueAt - Date.now();
+            if (delay <= 0) {
+                fireNoraReminder(reminder);
+                return;
+            }
+
+            window.clearTimeout(noraReminderTimers.get(reminder.id));
+            noraReminderTimers.set(reminder.id, window.setTimeout(checkNoraDueReminders, delay));
+        };
+
+        const restoreNoraReminders = () => {
+            loadNoraReminders()
+                .then((pendingReminders) => pendingReminders.forEach(scheduleNoraReminder))
+                .catch(() => {});
+            checkNoraDueReminders();
+        };
+
+        const parseNoraAbsoluteReminderTime = (command) => {
+            const timeMatch = command.match(/\b(?:a las|a la)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|de la manana|de la mañana|de la tarde|de la noche)?\b/);
+            if (! timeMatch) return null;
+
+            let hour = Number(timeMatch[1]);
+            const minute = Number(timeMatch[2] || 0);
+            const period = (timeMatch[3] || '').replace(/[\s.]+/g, '');
+            if (hour < 1 || hour > 23 || minute < 0 || minute > 59) return { error: 'range' };
+
+            if ((period === 'pm' || period === 'delatarde' || period === 'delanoche') && hour < 12) hour += 12;
+            if ((period === 'am' || period === 'delamanana' || period === 'delamañana') && hour === 12) hour = 0;
+
+            const dueAt = new Date();
+            dueAt.setHours(hour, minute, 0, 0);
+            if (dueAt.getTime() <= Date.now()) dueAt.setDate(dueAt.getDate() + 1);
+
+            return { dueAt: dueAt.getTime(), phrase: timeMatch[0] };
+        };
+
+        const parseNoraSpokenNumber = (value) => {
+            if (/^\d{1,3}$/.test(value)) return Number(value);
+
+            const normalized = value.replace(/\s+y\s+/g, ' ');
+            const numbers = {
+                un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+                seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11,
+                doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16,
+                diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20,
+                veintiuno: 21, veintiuna: 21, veintidos: 22, veintitres: 23,
+                veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27,
+                veintiocho: 28, veintinueve: 29, treinta: 30, cuarenta: 40,
+                cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90,
+            };
+
+            if (numbers[normalized]) return numbers[normalized];
+
+            const parts = normalized.split(' ');
+            if (parts.length === 2 && numbers[parts[0]] >= 30 && numbers[parts[1]] < 10) {
+                return numbers[parts[0]] + numbers[parts[1]];
+            }
+
+            return 0;
+        };
+
+        const parseNoraRelativeReminderTime = (command) => {
+            const timeMatch = command.match(/\b(?:dentro de|en)\s+([a-z0-9]+(?:\s+y\s+[a-z0-9]+)?)\s*(minutos|minuto|mins|min|horas|hora|segundos|segundo)\b/)
+                || command.match(/\b([a-z0-9]+(?:\s+y\s+[a-z0-9]+)?)\s*(minutos|minuto|mins|min|horas|hora|segundos|segundo)\b/);
+            if (! timeMatch) return null;
+
+            const amount = parseNoraSpokenNumber(timeMatch[1]);
+            const unit = timeMatch[2];
+            const unitMs = unit.startsWith('hora') ? 60 * 60 * 1000 : (unit.startsWith('segundo') ? 1000 : 60 * 1000);
+            const delayMs = amount * unitMs;
+            if (! amount || delayMs < 1000 || delayMs > 24 * 60 * 60 * 1000) return { error: 'range' };
+
+            return { dueAt: Date.now() + delayMs, phrase: timeMatch[0] };
+        };
+
+        const noraReminderDueLabel = (dueAt) => {
+            const reminderDate = new Date(dueAt);
+            const today = new Date();
+            const tomorrow = new Date();
+            tomorrow.setDate(today.getDate() + 1);
+            const time = reminderDate.toLocaleTimeString('es-ES', { hour: 'numeric', minute: '2-digit' });
+
+            if (reminderDate.toDateString() === today.toDateString()) return 'hoy a las '.concat(time);
+            if (reminderDate.toDateString() === tomorrow.toDateString()) return 'mañana a las '.concat(time);
+
+            return reminderDate.toLocaleString('es-ES', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+        };
+
+        const extractNoraReminderMessage = (command, timePhrase) => command
+            .replace(/\b(dame|pon|crea|programa)\b/g, ' ')
+            .replace(/\b(un|una|el|la|por favor)\b/g, ' ')
+            .replace(/\b(recordatorio|recuerdame|recuerdalo|avisame|avisa|alerta|alarma)\b/g, ' ')
+            .replace(timePhrase, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/^(en|de|que|para)\s+/, '')
+            .trim();
+
+        const parseNoraCancelReminderCommand = (command) => {
+            const wantsCancel = /\b(cancela|cancelar|borra|borrar|elimina|eliminar|quita|quitar)\b/.test(command)
+                && /\b(recordatorio|recordatorios|alerta|alertas|alarma|alarmas)\b/.test(command);
+            if (! wantsCancel) return null;
+
+            const cancelAll = /\b(todos|todas|mis|pendientes)\b/.test(command)
+                || ! /\b(de|sobre|para)\b/.test(command);
+            const query = command
+                .replace(/\b(cancela|cancelar|borra|borrar|elimina|eliminar|quita|quitar)\b/g, ' ')
+                .replace(/\b(todos|todas|mis|los|las|el|la|un|una|pendientes|recordatorio|recordatorios|alerta|alertas|alarma|alarmas|por favor)\b/g, ' ')
+                .replace(/^(de|sobre|para)\s+/, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            return { all: cancelAll || ! query, query };
+        };
+
+        const cancelNoraReminders = async ({ all, query }) => {
+            try {
+                const payload = await noraReminderRequest(noraReminderRoutes.cancel, {
+                    method: 'POST',
+                    body: { all, query },
+                });
+                const remindersToCancel = (payload.canceled || []).map(normalizeNoraReminder);
+
+                if (! remindersToCancel.length) {
+                    speakWithNora(query
+                        ? 'No encontré un recordatorio pendiente que coincida con '.concat(query, '.')
+                        : 'No tienes recordatorios pendientes.');
+                    return;
+                }
+
+                remindersToCancel.forEach((reminder) => completeNoraReminder(reminder.id));
+
+                if (remindersToCancel.length === 1) {
+                    speakWithNora('Listo. Cancelé el recordatorio de '.concat(noraReminderLabel(remindersToCancel[0]), '.'));
+                } else {
+                    speakWithNora('Listo. Cancelé '.concat(remindersToCancel.length, ' recordatorios pendientes.'));
+                }
+            } catch (error) {
+                speakWithNora('No pude cancelar los recordatorios ahora mismo.');
+            }
+        };
+
+        const parseNoraListReminderCommand = (command) => {
+            const wantsList = /\b(cuales|cuantos|lista|listar|dime|lee|ver|mostrar|muestrame|tengo)\b/.test(command)
+                && /\b(recordatorio|recordatorios|alerta|alertas|alarma|alarmas)\b/.test(command);
+            if (wantsList) return true;
+
+            return /^(recordatorios|mis recordatorios|recordatorios pendientes|alarmas pendientes)$/.test(command);
+        };
+
+        const listNoraReminders = async () => {
+            try {
+                const reminders = (await loadNoraReminders())
+                .filter((reminder) => Number(reminder.dueAt) > Date.now())
+                .sort((first, second) => Number(first.dueAt) - Number(second.dueAt));
+
+                if (! reminders.length) {
+                    speakWithNora('No tienes recordatorios pendientes.');
+                    return;
+                }
+
+                const intro = reminders.length === 1
+                    ? 'Tienes un recordatorio pendiente: '
+                    : 'Tienes '.concat(reminders.length, ' recordatorios pendientes: ');
+                const details = reminders
+                    .map((reminder, index) => ''.concat(index + 1, '. ', noraReminderLabel(reminder), ', ', noraReminderDueLabel(reminder.dueAt)))
+                    .join('. ');
+
+                speakWithNora(intro.concat(details, '.'));
+            } catch (error) {
+                speakWithNora('No pude consultar los recordatorios ahora mismo.');
+            }
+        };
+
+        const parseNoraVoiceGenderCommand = (command) => {
+            if (/\b(que voces tienes|voces disponibles|lista voces|dime las voces)\b/.test(command)) return 'list';
+
+            const mentionsVoice = /\b(cambia|cambiar|pon|poner|coloca|colocar|usa|usar)\b/.test(command)
+                && /\b(voz)\b/.test(command);
+            if (mentionsVoice || /\b(voz femenina|voz de mujer|voz masculina|voz de hombre)\b/.test(command)) return 'fixed-female';
+
+            return null;
+        };
+
+        const parseNoraReminderCommand = (command) => {
+            const quickAlarm = parseNoraRelativeReminderTime(command);
+            if (quickAlarm && ! quickAlarm.error && command.trim() === quickAlarm.phrase.trim()) {
+                return {
+                    id: 'nora-reminder-'.concat(Date.now(), '-', Math.random().toString(36).slice(2)),
+                    dueAt: quickAlarm.dueAt,
+                    message: 'alarma',
+                    quickAlarm: true,
+                    timePhrase: quickAlarm.phrase,
+                };
+            }
+
+            const wantsReminder = /\b(recuerdame|recuerdalo|avisame|avisa|alerta|alarma)\b/.test(command)
+                || (command.includes('recordatorio') && /\b(dame|pon|crea|programa|dentro de|en)\b/.test(command));
+            if (! wantsReminder) return null;
+
+            const time = parseNoraAbsoluteReminderTime(command) || parseNoraRelativeReminderTime(command);
+            if (! time) return { error: 'time' };
+            if (time.error) return time;
+
+            const message = extractNoraReminderMessage(command, time.phrase);
+
+            return {
+                id: 'nora-reminder-'.concat(Date.now(), '-', Math.random().toString(36).slice(2)),
+                dueAt: time.dueAt,
+                message: message || 'recordatorio',
+                quickAlarm: ! message || message === 'recordatorio',
+                timePhrase: time.phrase,
+            };
+        };
+
+        const createNoraReminder = async (reminder) => {
+            try {
+                const payload = await noraReminderRequest(noraReminderRoutes.store, {
+                    method: 'POST',
+                    body: {
+                        message: noraReminderLabel(reminder),
+                        due_at: new Date(reminder.dueAt).toISOString(),
+                    },
+                });
+                const savedReminder = normalizeNoraReminder(payload.reminder);
+                scheduleNoraReminder(savedReminder);
+                if (reminder.quickAlarm) {
+                    speakWithNora('Alarma configurada dentro de '.concat(reminder.timePhrase.replace(/^en\s+|^dentro de\s+/, ''), '.'));
+                } else {
+                    speakWithNora('Listo. Te aviso sobre '.concat(noraReminderLabel(savedReminder), ' ', noraReminderDueLabel(savedReminder.dueAt), '.'));
+                }
+            } catch (error) {
+                speakWithNora('No pude guardar el recordatorio ahora mismo.');
+            }
+        };
+
+        const parseNoraClientCallCommand = (command) => {
+            const callMatch = command.match(/\b(?:llama|llamar|llamale|marca|marcar)\s+(?:a\s+)?(.+)$/);
+            if (! callMatch) return null;
+
+            const name = callMatch[1]
+                .replace(/\b(?:por telefono|al telefono|ahora|por favor|cliente|clienta)\b/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            return name.length >= 2 ? { name } : { error: 'name' };
+        };
+
+        const callNoraClient = async ({ name }) => {
+            try {
+                speakWithNora('De acuerdo. Busco a '.concat(name, ' y preparo la llamada.'));
+                const payload = await noraReminderRequest(noraClientCallRoute, {
+                    method: 'POST',
+                    body: { name },
+                });
+                speakWithNora(payload.message || 'Listo. Estoy iniciando la llamada.');
+            } catch (error) {
+                let message = 'No pude iniciar la llamada ahora mismo.';
+                if (error.payload?.message) message = error.payload.message;
+                speakWithNora(message);
+            }
+        };
 
         const answerNoraCommand = (rawTranscript) => {
             const transcript = normalizedVoiceText(rawTranscript);
             const wakeWord = transcript.match(/\b(nora|nohra|lora|hora)\b/);
-            const hasKnownIntent = ['resumen', 'proxima', 'siguiente', 'cita', 'ganancia', 'ingreso', 'facturacion', 'hueco', 'adelantar', 'agenda', 'llamada', 'recordatorio', 'ayuda']
+            const hasKnownIntent = ['resumen', 'proxima', 'siguiente', 'cita', 'ganancia', 'ingreso', 'facturacion', 'hueco', 'adelantar', 'agenda', 'llamada', 'llama', 'llamar', 'llamale', 'marca', 'marcar', 'recordatorio', 'recuerdame', 'avisame', 'alerta', 'alarma', 'voz', 'mujer', 'hombre', 'femenina', 'masculina', 'cuales', 'cuantos', 'lista', 'listar', 'dime', 'lee', 'mostrar', 'muestrame', 'tengo', 'cancela', 'cancelar', 'borra', 'borrar', 'elimina', 'eliminar', 'quita', 'quitar', 'ayuda']
                 .some((word) => transcript.includes(word));
             if (! wakeWord && ! hasKnownIntent && Date.now() >= noraAwaitingCommandUntil) return false;
             const command = wakeWord ? transcript.slice((wakeWord.index || 0) + wakeWord[0].length).trim() : transcript;
@@ -1069,14 +1497,28 @@
             }
 
             noraAwaitingCommandUntil = 0;
-            if (command.includes('resumen')) speakDailyBriefing();
+            const cancelReminder = parseNoraCancelReminderCommand(command);
+            const listReminder = cancelReminder ? false : parseNoraListReminderCommand(command);
+            const clientCall = (cancelReminder || listReminder) ? null : parseNoraClientCallCommand(command);
+            const voiceGender = (cancelReminder || listReminder || clientCall) ? null : parseNoraVoiceGenderCommand(command);
+            const reminder = (cancelReminder || listReminder || clientCall || voiceGender) ? null : parseNoraReminderCommand(command);
+            if (cancelReminder) cancelNoraReminders(cancelReminder);
+            else if (listReminder) listNoraReminders();
+            else if (clientCall?.error === 'name') speakWithNora('Claro. Dime a que cliente quieres que llame.');
+            else if (clientCall) callNoraClient(clientCall);
+            else if (voiceGender === 'list') describeNoraBrowserVoices();
+            else if (voiceGender) speakWithNora('Nora ya está configurada con una sola voz femenina gratuita.');
+            else if (reminder?.error === 'time') speakWithNora('Claro. Dime en cuanto tiempo quieres el recordatorio. Por ejemplo: Nora, dame un recordatorio dentro de 15 minutos.');
+            else if (reminder?.error === 'range') speakWithNora('Puedo crear recordatorios entre un segundo y veinticuatro horas.');
+            else if (reminder) createNoraReminder(reminder);
+            else if (command.includes('resumen')) speakDailyBriefing();
             else if (command.includes('proxima') || command.includes('siguiente')) speakWithNora(noraVoiceResponses.next);
             else if (command.includes('cuantas') || command.includes('numero de citas') || command === 'citas') speakWithNora(noraVoiceResponses.appointments);
             else if (command.includes('ganancia') || command.includes('ingreso') || command.includes('facturacion')) speakWithNora(noraVoiceResponses.revenue);
             else if (command.includes('hueco') || command.includes('adelantar') || command.includes('completar la agenda')) speakWithNora(noraVoiceResponses.optimization);
             else if (command.includes('llamada') || command.includes('recordatorio')) speakWithNora(noraVoiceResponses.calls);
             else if (command.includes('ayuda') || command.includes('que puedes')) speakWithNora(noraVoiceResponses.help);
-            else speakWithNora('No he entendido esa petición. '.concat(noraVoiceResponses.help));
+            else speakNoraFallback();
             return true;
         };
 
@@ -1133,6 +1575,8 @@
         });
 
         updateNoraListeningStatus();
+        loadNoraBrowserVoices();
+        restoreNoraReminders();
         if (noraModeEnabled) window.setTimeout(startNoraRecognition, 600);
         window.addEventListener('beforeunload', stopNoraRecognition);
 
