@@ -55,4 +55,11 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+    'usage_costs' => [
+        'sms_usd' => (float) env('SV_COST_SMS_USD', 0.01),
+        'call_usd' => (float) env('SV_COST_CALL_USD', 0.03),
+        'email_usd' => (float) env('SV_COST_EMAIL_USD', 0.001),
+        'machine_monthly_usd' => (float) env('SV_COST_MACHINE_MONTHLY_USD', 0),
+    ],
+
 ];

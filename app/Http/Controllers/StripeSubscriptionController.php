@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Clinic;
+use App\Models\AppointmentPayment;
+use App\Services\AppointmentPaymentReceiptEmailService;
 use App\Models\SubscriptionPlan;
+use App\Services\AppointmentService;
 use App\Services\BillingInvoiceEmailService;
 use App\Services\StripeCheckoutService;
 use Illuminate\Http\RedirectResponse;
@@ -81,6 +84,12 @@ class StripeSubscriptionController extends Controller
 
     private function handleCheckoutCompleted(array $session): void
     {
+        if (($session['metadata']['type'] ?? null) === 'appointment_payment') {
+            $this->handleAppointmentPaymentCompleted($session);
+
+            return;
+        }
+
         $clinicId = (int) ($session['metadata']['clinic_id'] ?? $session['client_reference_id'] ?? 0);
         $planId = (int) ($session['metadata']['plan_id'] ?? 0);
 
@@ -97,6 +106,37 @@ class StripeSubscriptionController extends Controller
                 'subscription_status' => 'active',
                 'updated_at' => now(),
             ]);
+    }
+
+    private function handleAppointmentPaymentCompleted(array $session): void
+    {
+        $paymentId = (int) ($session['metadata']['payment_id'] ?? $session['client_reference_id'] ?? 0);
+
+        if (! $paymentId) {
+            return;
+        }
+
+        $payment = AppointmentPayment::query()
+            ->with('appointment')
+            ->whereKey($paymentId)
+            ->first();
+
+        if (! $payment) {
+            return;
+        }
+
+        $payment->update([
+            'status' => 'paid',
+            'stripe_checkout_session_id' => $session['id'] ?? $payment->stripe_checkout_session_id,
+            'stripe_payment_intent_id' => $session['payment_intent'] ?? $payment->stripe_payment_intent_id,
+            'paid_at' => now(),
+        ]);
+
+        if ($payment->appointment && ! in_array($payment->appointment->status, ['cancelled', 'canceled'], true)) {
+            app(AppointmentService::class)->update($payment->appointment, ['status' => 'completed']);
+        }
+
+        app(AppointmentPaymentReceiptEmailService::class)->send($payment->refresh());
     }
 
     private function handleSubscriptionChanged(array $subscription): void

@@ -6,6 +6,7 @@ use App\Models\Appointment;
 use App\Models\Client;
 use App\Models\Clinic;
 use App\Services\AppointmentReminderCallService;
+use App\Services\AppointmentService;
 use App\Services\GoogleTextToSpeechService;
 use App\Services\NoraLanguageService;
 use App\Services\ClinicResolver;
@@ -343,7 +344,7 @@ class TwilioPhoneNumberController extends Controller
         return response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, ['Content-Type' => 'text/xml']);
     }
 
-    public function reminderStatus(Request $request): Response
+    public function reminderStatus(Request $request, AppointmentService $appointments): Response
     {
         $callSid = (string) $request->input('CallSid');
         $callStatus = (string) $request->input('CallStatus') ?: 'callback';
@@ -361,9 +362,25 @@ class TwilioPhoneNumberController extends Controller
                 ->where('event', 'appointment_reminder_call')
                 ->update([
                     'status' => $callStatus,
-                    'sent_at' => in_array($callStatus, ['completed', 'answered'], true) ? now() : ($notification?->sent_at ?? null),
+                    'sent_at' => in_array($callStatus, ['completed', 'answered', 'in-progress'], true) ? now() : ($notification?->sent_at ?? null),
                     'updated_at' => now(),
                 ]);
+
+            if ($notification?->appointment_id && in_array($callStatus, ['answered', 'in-progress', 'completed'], true)) {
+                $appointment = Appointment::query()
+                    ->with(['clinic', 'client'])
+                    ->whereKey($notification->appointment_id)
+                    ->first();
+
+                if ($appointment && ! in_array($appointment->status, ['cancelled', 'canceled'], true)) {
+                    if ($appointment->status !== 'confirmed') {
+                        $appointments->confirm($appointment);
+                    }
+
+                    $appointment->forceFill(['reminder_call_enabled' => false])->save();
+                    $this->recordVoiceClientResponse($appointment, 'confirm');
+                }
+            }
         }
 
         DB::table('call_logs')->insert([
@@ -382,6 +399,33 @@ class TwilioPhoneNumberController extends Controller
         ]);
 
         return response('OK');
+    }
+
+    private function recordVoiceClientResponse(Appointment $appointment, string $response): void
+    {
+        $alreadyRecorded = DB::table('notifications')
+            ->where('appointment_id', $appointment->id)
+            ->where('event', 'appointment_client_response')
+            ->where('body', $response)
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return;
+        }
+
+        DB::table('notifications')->insert([
+            'clinic_id' => $appointment->clinic_id,
+            'client_id' => $appointment->client_id,
+            'appointment_id' => $appointment->id,
+            'channel' => 'voice',
+            'event' => 'appointment_client_response',
+            'recipient' => $appointment->client?->phone ?? 'unknown',
+            'status' => 'received',
+            'body' => $response,
+            'sent_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function completeIncomingCall(string $callSid): void

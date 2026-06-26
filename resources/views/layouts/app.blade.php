@@ -617,6 +617,10 @@
                 <span class="nav-label">Ajustes</span>
             </a>
             @if (auth()->user()?->is_super_admin)
+                <a class="{{ request()->is('costos-salones*') ? 'active' : '' }}" href="/costos-salones" title="Costos por salon">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/><path d="M4 19h16"/></svg>
+                    <span class="nav-label">Costos salones</span>
+                </a>
                 <a class="{{ request()->is('gestion-usuarios*') ? 'active' : '' }}" href="/gestion-usuarios" title="Gestion de usuarios">
                     <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
                     <span class="nav-label">Gestion de usuarios</span>
@@ -815,6 +819,368 @@
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') svCheckNoraReminders();
         });
+
+        (() => {
+            if (document.querySelector('[data-nora-listening]')) return;
+
+            const preferenceKey = 'secretary365-nora-listening';
+            const helpKey = 'secretary365-nora-help-shown-date';
+            const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const routes = {
+                reminders: {
+                    index: @json(route('nora-reminders.index')),
+                    store: @json(route('nora-reminders.store')),
+                    cancel: @json(route('nora-reminders.cancel')),
+                    due: @json(route('nora-reminders.due')),
+                },
+                clientCall: @json(route('nora-client-calls.store')),
+                clientAppointmentReminder: @json(route('nora-client-appointment-reminders.store')),
+                clientNote: @json(route('nora-client-notes.store')),
+                nextAppointmentDelay: @json(route('nora-next-appointment-delay.store')),
+                staffVacations: @json(route('staff.vacations.index')),
+                paymentsToday: @json(route('nora-payments.today')),
+            };
+
+            if (! SpeechRecognitionApi) return;
+
+            let enabled = window.localStorage.getItem(preferenceKey) === '1';
+            let recognition = null;
+            let recognitionRunning = false;
+            let speaking = false;
+            let restartTimer = null;
+            let awaitingCommandUntil = 0;
+
+            const normalizedVoiceText = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            const noraWakeWordMatch = (transcript) => transcript.match(/\b(?:n+\s*o+\s*r+\s*a+|n+\s*o+\s*h+\s*r+\s*a+|n+\s*o+\s*u+\s*r+\s*a+|n+\s*o+\s*l+\s*a+|l+\s*o+\s*r+\s*a+|h+\s*o+\s*r+\s*a+|m+\s*i+\s*a+|m+\s*i+\s*j+\s*a+|m+\s*i+\s*l+\s*a+)\b/);
+            const request = async (url, options = {}) => {
+                const response = await fetch(url, {
+                    method: options.method || 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                        Accept: 'application/json',
+                    },
+                    body: options.body ? JSON.stringify(options.body) : undefined,
+                    cache: 'no-store',
+                });
+
+                if (! response.ok) {
+                    const error = new Error('No se pudo completar la solicitud.');
+                    try { error.payload = await response.json(); } catch (parseError) {}
+                    throw error;
+                }
+
+                return response.json();
+            };
+
+            const stop = () => {
+                window.clearTimeout(restartTimer);
+                if (! recognition || ! recognitionRunning) return;
+                try { recognition.abort(); } catch (error) {}
+            };
+
+            const start = () => {
+                if (! enabled || speaking || ! recognition || recognitionRunning || document.visibilityState !== 'visible') return;
+                try { recognition.start(); } catch (error) {
+                    restartTimer = window.setTimeout(start, 900);
+                }
+            };
+
+            const speak = async (message) => {
+                if (! message || ! ('speechSynthesis' in window)) return;
+
+                speaking = true;
+                stop();
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(message);
+                utterance.lang = 'es-ES';
+                utterance.rate = 0.99;
+                utterance.pitch = 1.18;
+                const voices = window.speechSynthesis?.getVoices?.() || [];
+                const spanishVoices = voices.filter((voice) => /^es([-_]|$)/i.test(voice.lang || ''));
+                utterance.voice = spanishVoices.find((voice) => /female|helena|monica|paulina|sabina|luciana|elvira|laura|maria|paula|lucia|sofia|camila|mia/i.test(voice.name || ''))
+                    || spanishVoices[0]
+                    || voices[0]
+                    || null;
+                utterance.onend = () => {
+                    speaking = false;
+                    restartTimer = window.setTimeout(start, 500);
+                };
+                utterance.onerror = utterance.onend;
+                window.speechSynthesis.speak(utterance);
+            };
+
+            const parseSpokenNumber = (value) => {
+                if (/^\d{1,3}$/.test(value)) return Number(value);
+                const numbers = {
+                    un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5,
+                    seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11,
+                    doce: 12, trece: 13, catorce: 14, quince: 15, veinte: 20,
+                    treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60,
+                };
+                return numbers[value.replace(/\s+y\s+/g, ' ')] || 0;
+            };
+
+            const parseRelativeReminderTime = (command) => {
+                const timeMatch = command.match(/\b(?:dentro de|en)\s+([a-z0-9]+)\s*(minutos|minuto|mins|min|horas|hora|segundos|segundo)\b/)
+                    || command.match(/\b([a-z0-9]+)\s*(minutos|minuto|mins|min|horas|hora|segundos|segundo)\b/);
+                if (! timeMatch) return null;
+
+                const amount = parseSpokenNumber(timeMatch[1]);
+                const unit = timeMatch[2];
+                const unitMs = unit.startsWith('hora') ? 60 * 60 * 1000 : (unit.startsWith('segundo') ? 1000 : 60 * 1000);
+                const delayMs = amount * unitMs;
+                if (! amount || delayMs < 1000 || delayMs > 24 * 60 * 60 * 1000) return { error: 'range' };
+
+                return { dueAt: Date.now() + delayMs, phrase: timeMatch[0] };
+            };
+
+            const reminderLabel = (reminder) => reminder.message && reminder.message !== 'recordatorio' ? reminder.message : 'tu recordatorio';
+            const reminderDueLabel = (dueAt) => {
+                const reminderDate = new Date(dueAt);
+                const time = reminderDate.toLocaleTimeString('es-ES', { hour: 'numeric', minute: '2-digit' });
+                return 'hoy a las '.concat(time);
+            };
+
+            const parseReminderCommand = (command) => {
+                const wantsReminder = /\b(recuerdame|recuerdalo|avisame|avisa|alerta|alarma|recordatorio)\b/.test(command);
+                if (! wantsReminder) return null;
+
+                const time = parseRelativeReminderTime(command);
+                if (! time) return { error: 'time' };
+                if (time.error) return time;
+
+                const message = command
+                    .replace(/\b(dame|pon|crea|programa|un|una|el|la|por favor|recordatorio|recuerdame|recuerdalo|avisame|avisa|alerta|alarma)\b/g, ' ')
+                    .replace(time.phrase, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .replace(/^(en|de|que|para)\s+/, '')
+                    .trim();
+
+                return { dueAt: time.dueAt, message: message || 'recordatorio', timePhrase: time.phrase };
+            };
+
+            const parseClientCallCommand = (command) => {
+                const match = command.match(/\b(?:llama|llamar|llamale|marca|marcar)\s+(?:a\s+)?(.+)$/);
+                if (! match) return null;
+                const name = match[1].replace(/\b(?:por telefono|al telefono|ahora|por favor|cliente|clienta)\b/g, ' ').replace(/\s+/g, ' ').trim();
+                return name.length >= 2 ? { name } : { error: 'name' };
+            };
+
+            const parseClientAppointmentReminderCommand = (command) => {
+                const match = command.match(/\b(?:recuerdale|recordale|recuerdales|recordales|avisa|avisale|avisales)\s+(?:la\s+|su\s+)?cita\s+(?:a\s+)?(.+)$/)
+                    || command.match(/\b(?:recuerda|recordatorio)\s+(?:la\s+|su\s+)?cita\s+(?:a\s+)?(.+)$/);
+                if (! match) return null;
+                const name = match[1].replace(/\b(?:por telefono|al telefono|ahora|por favor|cliente|clienta)\b/g, ' ').replace(/\s+/g, ' ').trim();
+                return name.length >= 2 ? { name } : { error: 'name' };
+            };
+
+            const parseStaffVacationCommand = (command) => {
+                const match = command.match(/\b(?:dime|lee|consulta|ver|muestrame|cuales son)?\s*(?:las\s+)?vacaciones\s+(?:de\s+)?(.+)$/)
+                    || command.match(/\bcuando\s+(?:sale|esta|estara)\s+(.+?)\s+(?:de\s+)?vacaciones\b/);
+                if (! match) return null;
+                const name = match[1].replace(/\b(?:por favor|especialista|estilista|empleado|empleada)\b/g, ' ').replace(/\s+/g, ' ').trim();
+                return name.length >= 2 ? { name } : { error: 'name' };
+            };
+
+            const parseDelayMinutes = (command) => {
+                if (/\bmedia\s+hora\b/.test(command)) return 30;
+                if (/\b(?:un\s+)?cuarto\s+(?:de\s+)?hora\b/.test(command)) return 15;
+                if (/\b(?:una|un)\s+hora\b/.test(command)) return 60;
+
+                const minuteMatch = command.match(/\b([a-z0-9]+)\s*(minutos|minuto|mins|min)\b/);
+                if (minuteMatch) return parseSpokenNumber(minuteMatch[1]);
+
+                const hourMatch = command.match(/\b([a-z0-9]+)\s*(horas|hora)\b/);
+                if (hourMatch) return parseSpokenNumber(hourMatch[1]) * 60;
+
+                return 0;
+            };
+
+            const parseNextAppointmentDelayCommand = (command) => {
+                const mentionsNextAppointment = /\b(proxima|siguiente)\b/.test(command)
+                    && /\b(cita|cliente|persona)\b/.test(command);
+                const mentionsDelay = /\b(retrasad|retraso|tarde|demora|demorados|demorad|atrasad|atraso)\b/.test(command);
+                const wantsNotify = /\b(llama|llamar|llamale|marca|marcar|avisa|avisar|informa|informar|dile|decirle|comunica|notifica)\b/.test(command);
+                if (! mentionsNextAppointment || ! mentionsDelay || ! wantsNotify) return null;
+
+                const minutes = parseDelayMinutes(command);
+                if (! minutes) return { error: 'minutes' };
+                if (minutes < 1 || minutes > 240) return { error: 'range' };
+
+                return { minutes };
+            };
+
+            const parseClientNoteCommand = (command) => {
+                const match = command.match(/\b(?:guarda|guardar|anota|anotar|agrega|agregar|añade|anade|poner|pon)\s+(?:una\s+)?(?:nota\s+)?(?:en|al|para)\s+(?:el\s+|la\s+)?(?:cliente|clienta)\s+(.+?)\s+(?:que|porque|con nota|nota|dice|es|tiene|esta|está)\s+(.+)$/)
+                    || command.match(/\b(?:guarda|guardar|anota|anotar|agrega|agregar|añade|anade|poner|pon)\s+(?:en|al|para)\s+(.+?)\s+(?:que|porque|con nota|nota|dice|es|tiene|esta|está)\s+(.+)$/);
+                if (! match) return null;
+                const name = match[1].replace(/\b(?:cliente|clienta|por favor)\b/g, ' ').replace(/\s+/g, ' ').trim();
+                const note = match[2].replace(/\b(?:por favor)\b/g, ' ').replace(/\s+/g, ' ').trim();
+                if (name.length < 2) return { error: 'name' };
+                if (note.length < 2) return { error: 'note', name };
+                return { name, note };
+            };
+
+            const saveClientNote = async ({ name, note }) => {
+                try {
+                    speak('De acuerdo. Guardo esa nota en el cliente '.concat(name, '.'));
+                    const payload = await request(routes.clientNote, { method: 'POST', body: { name, note } });
+                    speak(payload.message || 'Listo. Guarde la nota del cliente.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude guardar la nota ahora mismo.');
+                }
+            };
+
+            const callClient = async ({ name }) => {
+                try {
+                    speak('De acuerdo. Busco a '.concat(name, ' y preparo la llamada.'));
+                    const payload = await request(routes.clientCall, { method: 'POST', body: { name } });
+                    speak(payload.message || 'Listo. Estoy iniciando la llamada.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude iniciar la llamada ahora mismo.');
+                }
+            };
+
+            const remindClientAppointment = async ({ name }) => {
+                try {
+                    speak('De acuerdo. Busco la proxima cita de '.concat(name, ' y preparo el recordatorio.'));
+                    const payload = await request(routes.clientAppointmentReminder, { method: 'POST', body: { name } });
+                    speak(payload.message || 'Listo. Estoy recordandole su cita.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude iniciar el recordatorio de cita ahora mismo.');
+                }
+            };
+
+            const describeStaffVacations = async ({ name }) => {
+                try {
+                    const query = new URLSearchParams({ name });
+                    const payload = await request(routes.staffVacations.concat('?').concat(query.toString()));
+                    speak(payload.message || 'No encontre vacaciones proximas registradas.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude consultar las vacaciones ahora mismo.');
+                }
+            };
+
+            const describePaymentsToday = async () => {
+                try {
+                    const payload = await request(routes.paymentsToday);
+                    speak(payload.message || 'No pude consultar los cobros de hoy.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude consultar los cobros de hoy ahora mismo.');
+                }
+            };
+
+            const notifyNextAppointmentDelay = async ({ minutes }) => {
+                try {
+                    speak('De acuerdo. Aviso a la proxima cita que vamos retrasados '.concat(minutes, ' minutos.'));
+                    const payload = await request(routes.nextAppointmentDelay, { method: 'POST', body: { minutes } });
+                    speak(payload.message || 'Listo. Estoy avisando a la proxima cita.');
+                } catch (error) {
+                    speak(error.payload?.message || 'No pude avisar a la proxima cita ahora mismo.');
+                }
+            };
+
+            const createReminder = async (reminder) => {
+                try {
+                    const payload = await request(routes.reminders.store, {
+                        method: 'POST',
+                        body: { message: reminderLabel(reminder), due_at: new Date(reminder.dueAt).toISOString() },
+                    });
+                    const saved = payload.reminder || reminder;
+                    speak('Listo. Te aviso sobre '.concat(reminderLabel(saved), ' ', reminderDueLabel(saved.due_at || saved.dueAt || reminder.dueAt), '.'));
+                } catch (error) {
+                    speak('No pude guardar el recordatorio ahora mismo.');
+                }
+            };
+
+            const answer = (rawTranscript) => {
+                const transcript = normalizedVoiceText(rawTranscript);
+                const wakeWord = noraWakeWordMatch(transcript);
+                const hasKnownIntent = ['llama', 'llamar', 'llamale', 'marca', 'marcar', 'avisa', 'avisar', 'informa', 'informar', 'dile', 'retraso', 'retrasad', 'tarde', 'demora', 'atraso', 'guarda', 'guardar', 'anota', 'agrega', 'cliente', 'clienta', 'nota', 'recordatorio', 'recuerdame', 'avisame', 'alerta', 'alarma', 'vacaciones', 'cobrado', 'cobros', 'caja', 'dinero', 'pagado', 'pagos', 'ayuda']
+                    .some((word) => transcript.includes(word));
+                if (! wakeWord && ! hasKnownIntent && Date.now() >= awaitingCommandUntil) return false;
+
+                const command = wakeWord ? transcript.slice((wakeWord.index || 0) + wakeWord[0].length).trim() : transcript;
+                if (! command) {
+                    awaitingCommandUntil = Date.now() + 10000;
+                    speak('Te escucho. ¿Qué quieres hacer?');
+                    return true;
+                }
+
+                awaitingCommandUntil = 0;
+                const nextDelay = parseNextAppointmentDelayCommand(command);
+                const appointmentReminder = nextDelay ? null : parseClientAppointmentReminderCommand(command);
+                const staffVacation = (nextDelay || appointmentReminder) ? null : parseStaffVacationCommand(command);
+                const clientNote = (nextDelay || appointmentReminder || staffVacation) ? null : parseClientNoteCommand(command);
+                const reminder = (nextDelay || appointmentReminder || staffVacation || clientNote) ? null : parseReminderCommand(command);
+                const clientCall = (nextDelay || appointmentReminder || staffVacation || clientNote || reminder) ? null : parseClientCallCommand(command);
+
+                if (nextDelay?.error === 'minutes') speak('Claro. Dime cuantos minutos de retraso debo avisar a la proxima cita.');
+                else if (nextDelay?.error === 'range') speak('Puedo avisar retrasos entre uno y doscientos cuarenta minutos.');
+                else if (nextDelay) notifyNextAppointmentDelay(nextDelay);
+                else if (appointmentReminder?.error === 'name') speak('Claro. Dime a que cliente quieres recordarle la cita.');
+                else if (appointmentReminder) remindClientAppointment(appointmentReminder);
+                else if (staffVacation?.error === 'name') speak('Claro. Dime de que especialista quieres consultar vacaciones.');
+                else if (staffVacation) describeStaffVacations(staffVacation);
+                else if (command.includes('cobrado') || command.includes('cobros') || command.includes('caja') || command.includes('dinero') || command.includes('pagado') || command.includes('pagos')) describePaymentsToday();
+                else if (clientNote?.error === 'name') speak('Claro. Dime en que cliente quieres guardar la nota.');
+                else if (clientNote?.error === 'note') speak('Claro. Dime que nota quieres guardar para '.concat(clientNote.name, '.'));
+                else if (clientNote) saveClientNote(clientNote);
+                else if (clientCall?.error === 'name') speak('Claro. Dime a que cliente quieres que llame.');
+                else if (clientCall) callClient(clientCall);
+                else if (reminder?.error === 'time') speak('Claro. Dime en cuanto tiempo quieres el recordatorio.');
+                else if (reminder?.error === 'range') speak('Puedo crear recordatorios entre un segundo y veinticuatro horas.');
+                else if (reminder) createReminder(reminder);
+                else if (command.includes('ayuda') || command.includes('que puedes')) speak('Puedes pedirme que llame a un cliente, avise retrasos a la proxima cita, guarde una nota interna o cree un recordatorio.');
+                else {
+                    const today = new Date().toISOString().slice(0, 10);
+                    if (window.localStorage.getItem(helpKey) !== today) {
+                        window.localStorage.setItem(helpKey, today);
+                        speak('No he entendido esa peticion. Puedes pedirme que llame a un cliente, avise retrasos a la proxima cita, guarde una nota interna o cree un recordatorio.');
+                    }
+                }
+
+                return true;
+            };
+
+            recognition = new SpeechRecognitionApi();
+            recognition.lang = 'es-ES';
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+            recognition.onstart = () => { recognitionRunning = true; };
+            recognition.onresult = (event) => {
+                for (let index = event.resultIndex; index < event.results.length; index += 1) {
+                    if (! event.results[index].isFinal) continue;
+                    answer((event.results[index][0].transcript || '').trim());
+                }
+            };
+            recognition.onerror = (event) => {
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    enabled = false;
+                    window.localStorage.removeItem(preferenceKey);
+                }
+            };
+            recognition.onend = () => {
+                recognitionRunning = false;
+                if (enabled && ! speaking) restartTimer = window.setTimeout(start, 800);
+            };
+
+            window.addEventListener('storage', (event) => {
+                if (event.key !== preferenceKey) return;
+                enabled = event.newValue === '1';
+                if (enabled) start();
+                else stop();
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') start();
+                else stop();
+            });
+            if (enabled) window.setTimeout(start, 600);
+            window.addEventListener('beforeunload', stop);
+        })();
         @endauth
 
         const consoleCallIndicator = document.querySelector('[data-console-call-indicator]');

@@ -28,6 +28,66 @@
             outline: 0;
             box-shadow: none;
         }
+        .vacation-panel {
+            display: grid;
+            gap: 8px;
+            min-width: 260px;
+        }
+        .vacation-form {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+        }
+        .vacation-form input {
+            min-height: 34px;
+            padding: 6px 8px;
+            font-size: 12px;
+        }
+        .vacation-form .vacation-reason {
+            grid-column: 1 / -1;
+        }
+        .vacation-form .btn {
+            grid-column: 1 / -1;
+            min-height: 32px;
+            padding: 0 10px;
+            font-size: 12px;
+        }
+        .vacation-list {
+            display: grid;
+            gap: 6px;
+            margin-top: 2px;
+        }
+        .vacation-item {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 9px;
+            border: 1px solid #bbf7d0;
+            border-radius: 6px;
+            background: #f0fdf4;
+            color: #166534;
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .vacation-item small {
+            display: block;
+            margin-top: 2px;
+            color: #15803d;
+            font-weight: 700;
+        }
+        .vacation-item button {
+            min-height: 26px;
+            padding: 0 8px;
+            border-color: #bbf7d0;
+            color: #166534;
+            font-size: 11px;
+        }
+        .vacation-empty {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
     </style>
     @if (session('staff_status'))
         <div class="card" style="margin-bottom:18px;border-color:#bbf7d0;background:#f0fdf4;color:#166534;font-weight:800;">
@@ -143,6 +203,7 @@
                         <th>Nombre</th>
                         <th>Servicio</th>
                         <th>Horario</th>
+                        <th>Vacaciones</th>
                         <th>Contacto</th>
                         <th>Estado</th>
                         <th>Accion</th>
@@ -178,6 +239,39 @@
                                 <div class="grid-2">
                                     <input form="stylist-form-{{ $stylist->id }}" name="work_starts_at" type="time" value="{{ $stylist->work_starts_at ? substr($stylist->work_starts_at, 0, 5) : '' }}">
                                     <input form="stylist-form-{{ $stylist->id }}" name="work_ends_at" type="time" value="{{ $stylist->work_ends_at ? substr($stylist->work_ends_at, 0, 5) : '' }}">
+                                </div>
+                            </td>
+                            <td>
+                                <div class="vacation-panel">
+                                    <form method="POST" action="/personal/{{ $stylist->id }}/vacaciones" class="vacation-form">
+                                        @csrf
+                                        <input name="starts_on" type="date" value="{{ old('starts_on') }}" aria-label="Inicio de vacaciones" required>
+                                        <input name="ends_on" type="date" value="{{ old('ends_on') }}" aria-label="Fin de vacaciones" required>
+                                        <input class="vacation-reason" name="reason" value="{{ old('reason') }}" placeholder="Motivo opcional">
+                                        <button class="btn" type="submit">Asignar vacaciones</button>
+                                    </form>
+
+                                    @if ($stylist->vacations->isEmpty())
+                                        <span class="vacation-empty">Sin vacaciones próximas.</span>
+                                    @else
+                                        <div class="vacation-list">
+                                            @foreach ($stylist->vacations as $vacation)
+                                                <div class="vacation-item">
+                                                    <span>
+                                                        {{ $vacation->starts_on->format('d/m/Y') }} - {{ $vacation->ends_on->format('d/m/Y') }}
+                                                        @if ($vacation->reason)
+                                                            <small>{{ $vacation->reason }}</small>
+                                                        @endif
+                                                    </span>
+                                                    <form method="POST" action="/personal/{{ $stylist->id }}/vacaciones/{{ $vacation->id }}">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button class="btn" type="submit">Quitar</button>
+                                                    </form>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @endif
                                 </div>
                             </td>
                             <td>

@@ -118,6 +118,11 @@ class Clinic extends Model
         return $this->hasMany(Appointment::class);
     }
 
+    public function appointmentPayments(): HasMany
+    {
+        return $this->hasMany(AppointmentPayment::class);
+    }
+
     public function clients(): HasMany
     {
         return $this->hasMany(Client::class);

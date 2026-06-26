@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\AppointmentPaymentController;
 use App\Http\Controllers\ActivityExportController;
 use App\Http\Controllers\BillingController;
 use App\Http\Controllers\ClientController;
@@ -23,9 +24,11 @@ use App\Http\Controllers\ScheduleOptimizationController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StripeSubscriptionController;
+use App\Http\Controllers\SuperAdminCostController;
 use App\Http\Controllers\TwilioPhoneNumberController;
 use App\Http\Controllers\UserAdminController;
 use App\Models\Appointment;
+use App\Models\AppointmentPayment;
 use App\Models\Service as SalonService;
 use App\Models\Stylist;
 use App\Services\AppointmentReminderCallService;
@@ -53,6 +56,8 @@ Route::get('/cita/{appointment}/{token}/confirmar', [PublicRescheduleController:
 Route::get('/cita/{appointment}/{token}/cancelar', [PublicRescheduleController::class, 'cancel'])->name('public-appointments.cancel');
 Route::get('/reagendar/{appointment}/{token}', [PublicRescheduleController::class, 'show'])->name('public-reschedule.show');
 Route::post('/reagendar/{appointment}/{token}', [PublicRescheduleController::class, 'update'])->name('public-reschedule.update');
+Route::view('/pagos/exito', 'payments.success')->name('appointment-payments.success');
+Route::view('/pagos/cancelado', 'payments.cancel')->name('appointment-payments.cancel');
 Route::get('/cita/{appointment}/adelantar', [ScheduleOptimizationController::class, 'show'])->middleware('signed')->name('schedule-optimization.show');
 Route::post('/cita/{appointment}/adelantar', [ScheduleOptimizationController::class, 'accept'])->middleware('signed');
 
@@ -60,6 +65,7 @@ Route::get('/citas', [AppointmentController::class, 'index'])->middleware('auth'
 Route::get('/informes/actividad', ActivityExportController::class)->middleware('auth')->name('activity-export');
 Route::get('/citas/{appointment}/editar', [AppointmentController::class, 'edit'])->middleware('auth');
 Route::put('/citas/{appointment}/recordatorio', [AppointmentController::class, 'reminders'])->middleware('auth');
+Route::post('/citas/{appointment}/pagos', [AppointmentPaymentController::class, 'store'])->middleware('auth')->name('appointments.payments.store');
 Route::post('/citas/{appointment}/llamar-ahora', [AppointmentController::class, 'callNow'])->middleware('auth')->name('appointments.call-now');
 Route::put('/citas/{appointment}/cancelar', [AppointmentController::class, 'cancel'])->middleware('auth');
 Route::put('/citas/{appointment}', [AppointmentController::class, 'update'])->middleware('auth');
@@ -79,7 +85,10 @@ Route::middleware('auth')->group(function (): void {
 
 Route::get('/personal', [StaffController::class, 'index'])->middleware('auth');
 Route::post('/personal', [StaffController::class, 'store'])->middleware('auth');
+Route::get('/personal/vacaciones', [StaffController::class, 'vacations'])->middleware('auth')->name('staff.vacations.index');
 Route::put('/personal/{stylist}', [StaffController::class, 'update'])->middleware('auth');
+Route::post('/personal/{stylist}/vacaciones', [StaffController::class, 'storeVacation'])->middleware('auth');
+Route::delete('/personal/{stylist}/vacaciones/{vacation}', [StaffController::class, 'destroyVacation'])->middleware('auth');
 Route::delete('/personal/{stylist}', [StaffController::class, 'destroy'])->middleware('auth');
 Route::get('/personal/servicios', [ServiceController::class, 'index'])->middleware('auth');
 Route::post('/personal/servicios', [ServiceController::class, 'store'])->middleware('auth');
@@ -170,6 +179,35 @@ Route::post('/consola/resumen-diario/escuchado', [DailyBriefingController::class
 
 Route::middleware('auth')->group(function (): void {
     Route::post('/consola/nora/llamar-cliente', [NoraClientCallController::class, 'store'])->name('nora-client-calls.store');
+    Route::post('/consola/nora/recordar-cita-cliente', [NoraClientCallController::class, 'remindClientAppointment'])->name('nora-client-appointment-reminders.store');
+    Route::post('/consola/nora/guardar-nota-cliente', [NoraClientCallController::class, 'storeClientNote'])->name('nora-client-notes.store');
+    Route::post('/consola/nora/avisar-retraso-proxima-cita', [NoraClientCallController::class, 'notifyNextAppointmentDelay'])->name('nora-next-appointment-delay.store');
+    Route::get('/consola/nora/cobros-hoy', function (Request $request, ClinicResolver $clinics) {
+        $clinic = $clinics->currentOrCreate($request->user());
+        $timezone = $clinic->localTimezone();
+        $start = now($timezone)->startOfDay()->timezone(config('app.timezone'));
+        $end = now($timezone)->endOfDay()->timezone(config('app.timezone'));
+        $payments = AppointmentPayment::query()
+            ->where('clinic_id', $clinic->id)
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$start, $end])
+            ->get();
+        $total = (int) $payments->sum('amount_cents');
+        $cash = (int) $payments->where('method', 'cash')->sum('amount_cents');
+        $stripe = (int) $payments->where('method', 'stripe')->sum('amount_cents');
+        $other = (int) $payments->where('method', 'other')->sum('amount_cents');
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => $total > 0
+                ? 'Hoy llevamos cobrado '.number_format($total / 100, 2).' dolares. En efectivo '.number_format($cash / 100, 2).', por Stripe '.number_format($stripe / 100, 2).' y por otros metodos '.number_format($other / 100, 2).'.'
+                : 'Hoy todavia no hay pagos cobrados registrados.',
+            'total_cents' => $total,
+            'cash_cents' => $cash,
+            'stripe_cents' => $stripe,
+            'other_cents' => $other,
+        ]);
+    })->name('nora-payments.today');
     Route::get('/nora/recordatorios', [NoraReminderController::class, 'index'])->name('nora-reminders.index');
     Route::post('/nora/recordatorios', [NoraReminderController::class, 'store'])->name('nora-reminders.store');
     Route::post('/nora/recordatorios/cancelar', [NoraReminderController::class, 'cancel'])->name('nora-reminders.cancel');
@@ -986,12 +1024,14 @@ Route::get('/dashboard', function () {
 })->middleware('auth');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/costos-salones', [SuperAdminCostController::class, 'index'])->name('super-admin.costs');
     Route::get('/gestion-usuarios', [UserAdminController::class, 'index'])->name('users.index');
     Route::post('/gestion-usuarios', [UserAdminController::class, 'store'])->name('users.store');
     Route::patch('/gestion-usuarios/{user}/estado', [UserAdminController::class, 'status'])->name('users.status');
     Route::delete('/gestion-usuarios/{user}', [UserAdminController::class, 'destroy'])->name('users.destroy');
-    Route::post('/gestion-usuarios/{user}/restaurar', [UserAdminController::class, 'restore'])->name('users.restore');
     Route::get('/base-de-datos/{table?}', [DatabaseAdminController::class, 'index'])->name('database.index');
+    Route::post('/base-de-datos/{table}', [DatabaseAdminController::class, 'store'])->name('database.store');
+    Route::post('/base-de-datos/{table}/eliminar-seleccionados', [DatabaseAdminController::class, 'bulkDestroy'])->name('database.bulk-destroy');
     Route::post('/base-de-datos/{table}/{id}', [DatabaseAdminController::class, 'update'])->name('database.update');
     Route::post('/base-de-datos/{table}/{id}/eliminar', [DatabaseAdminController::class, 'destroy'])->name('database.destroy');
 });

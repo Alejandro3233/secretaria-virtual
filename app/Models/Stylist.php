@@ -42,4 +42,9 @@ class Stylist extends Model
     {
         return $this->hasMany(Appointment::class);
     }
+
+    public function vacations(): HasMany
+    {
+        return $this->hasMany(StylistVacation::class);
+    }
 }

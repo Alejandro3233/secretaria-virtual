@@ -209,6 +209,10 @@ class PublicRescheduleController extends Controller
             return false;
         }
 
+        if ($this->stylistOnVacation($stylist, $startsAt)) {
+            return false;
+        }
+
         $duration = $appointment->service?->duration_minutes
             ?? ($appointment->ends_at ? $appointment->starts_at->diffInMinutes($appointment->ends_at) : 60);
         $endsAt = $startsAt->copy()->addMinutes($duration);
@@ -276,6 +280,14 @@ class PublicRescheduleController extends Controller
         $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 
         return in_array(strtolower($date->englishDayOfWeek), $workDays, true);
+    }
+
+    private function stylistOnVacation(Stylist $stylist, Carbon $date): bool
+    {
+        return $stylist->vacations()
+            ->whereDate('starts_on', '<=', $date->toDateString())
+            ->whereDate('ends_on', '>=', $date->toDateString())
+            ->exists();
     }
 
     private function workStartFor(Stylist $stylist, Carbon $date, string $timezone): Carbon

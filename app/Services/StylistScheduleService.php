@@ -19,6 +19,18 @@ class StylistScheduleService
 
     public function validationMessage(Stylist $stylist, CarbonInterface $startsAt, CarbonInterface $endsAt): ?string
     {
+        $vacation = $stylist->vacations()
+            ->whereDate('starts_on', '<=', $startsAt->toDateString())
+            ->whereDate('ends_on', '>=', $startsAt->toDateString())
+            ->first();
+
+        if ($vacation) {
+            $range = $vacation->starts_on->format('d/m/Y').' al '.$vacation->ends_on->format('d/m/Y');
+            $reason = $vacation->reason ? ' Motivo: '.$vacation->reason.'.' : '';
+
+            return $stylist->name.' esta de vacaciones del '.$range.'.'.$reason;
+        }
+
         $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
         $day = strtolower($startsAt->englishDayOfWeek);
         $workStart = $this->atTime($startsAt, $stylist->work_starts_at ?: '08:00');

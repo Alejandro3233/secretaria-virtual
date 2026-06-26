@@ -753,6 +753,107 @@ class AuthFlowTest extends TestCase
         ]);
     }
 
+    public function test_super_admin_can_insert_database_record(): void
+    {
+        $superAdmin = User::factory()->create(['is_super_admin' => true]);
+
+        $this->actingAs($superAdmin)
+            ->post('/base-de-datos/clinics', [
+                'name' => 'Salon Nuevo',
+                'email' => 'nuevo@example.com',
+                'phone' => '+12135550111',
+                'timezone' => 'America/New_York',
+            ])
+            ->assertRedirect('/base-de-datos/clinics');
+
+        $this->assertDatabaseHas('clinics', [
+            'name' => 'Salon Nuevo',
+            'email' => 'nuevo@example.com',
+        ]);
+    }
+
+    public function test_super_admin_can_bulk_delete_database_records(): void
+    {
+        $superAdmin = User::factory()->create(['is_super_admin' => true]);
+        $first = Clinic::create(['name' => 'Salon Bulk 1']);
+        $second = Clinic::create(['name' => 'Salon Bulk 2']);
+
+        $this->actingAs($superAdmin)
+            ->post('/base-de-datos/clinics/eliminar-seleccionados', [
+                'ids' => [$first->id, $second->id],
+            ])
+            ->assertRedirect('/base-de-datos/clinics');
+
+        $this->assertDatabaseMissing('clinics', ['id' => $first->id]);
+        $this->assertDatabaseMissing('clinics', ['id' => $second->id]);
+    }
+
+    public function test_super_admin_can_bulk_delete_clients_with_related_records(): void
+    {
+        $superAdmin = User::factory()->create(['is_super_admin' => true]);
+        $clinic = Clinic::create(['name' => 'Salon Clientes']);
+        $client = Client::create([
+            'clinic_id' => $clinic->id,
+            'first_name' => 'Rafael',
+            'last_name' => 'Rodriguez',
+            'phone' => '+12135550123',
+        ]);
+        $appointment = Appointment::create([
+            'clinic_id' => $clinic->id,
+            'client_id' => $client->id,
+            'starts_at' => now()->addDay(),
+            'ends_at' => now()->addDay()->addHour(),
+            'status' => 'pending',
+            'source' => 'manual',
+        ]);
+
+        DB::table('client_preferences')->insert([
+            'client_id' => $client->id,
+            'allergies' => 'Yodo',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('appointment_activity_logs')->insert([
+            'appointment_id' => $appointment->id,
+            'action' => 'created',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('call_logs')->insert([
+            'clinic_id' => $clinic->id,
+            'client_id' => $client->id,
+            'appointment_id' => $appointment->id,
+            'from_phone' => '+12135550123',
+            'status' => 'received',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('notifications')->insert([
+            'clinic_id' => $clinic->id,
+            'client_id' => $client->id,
+            'appointment_id' => $appointment->id,
+            'channel' => 'sms',
+            'event' => 'test',
+            'recipient' => '+12135550123',
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($superAdmin)
+            ->post('/base-de-datos/clients/eliminar-seleccionados', [
+                'ids' => [$client->id],
+            ])
+            ->assertRedirect('/base-de-datos/clients');
+
+        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+        $this->assertDatabaseMissing('appointments', ['id' => $appointment->id]);
+        $this->assertDatabaseMissing('client_preferences', ['client_id' => $client->id]);
+        $this->assertDatabaseMissing('call_logs', ['client_id' => $client->id]);
+        $this->assertDatabaseMissing('notifications', ['client_id' => $client->id]);
+        $this->assertDatabaseMissing('appointment_activity_logs', ['appointment_id' => $appointment->id]);
+    }
+
     public function test_user_management_is_only_available_to_super_admins(): void
     {
         $normalUser = User::factory()->create(['is_super_admin' => false]);
@@ -827,28 +928,23 @@ class AuthFlowTest extends TestCase
         $this->assertTrue($target->fresh()->is_active);
     }
 
-    public function test_deleted_user_is_preserved_in_history_and_can_be_restored(): void
+    public function test_deleted_user_is_removed_permanently(): void
     {
         $superAdmin = User::factory()->create(['is_super_admin' => true]);
-        $clinic = Clinic::create(['name' => 'Clinica historial']);
-        $target = User::factory()->create(['email' => 'history@example.com']);
+        $clinic = Clinic::create(['name' => 'Clinica usuarios']);
+        $target = User::factory()->create(['email' => 'delete-forever@example.com']);
         $target->clinics()->attach($clinic->id, ['role' => 'staff']);
 
         $this->actingAs($superAdmin)
             ->delete(route('users.destroy', $target))
             ->assertRedirect(route('users.index'));
 
-        $this->assertSoftDeleted('users', ['id' => $target->id]);
-        $this->assertDatabaseHas('clinic_users', ['user_id' => $target->id, 'clinic_id' => $clinic->id]);
+        $this->assertDatabaseMissing('users', ['id' => $target->id]);
+        $this->assertDatabaseMissing('clinic_users', ['user_id' => $target->id, 'clinic_id' => $clinic->id]);
         $this->actingAs($superAdmin)->get(route('users.index'))
-            ->assertOk()->assertDontSee('history@example.com');
-        $this->actingAs($superAdmin)->get(route('users.index', ['estado' => 'historial']))
-            ->assertOk()->assertSee('history@example.com');
-
-        $this->actingAs($superAdmin)
-            ->post(route('users.restore', $target->id))
-            ->assertRedirect(route('users.index'));
-        $this->assertDatabaseHas('users', ['id' => $target->id, 'is_active' => 1, 'deleted_at' => null]);
+            ->assertOk()
+            ->assertDontSee('delete-forever@example.com')
+            ->assertDontSee('Historial de eliminados');
     }
 
     public function test_cancelled_google_appointments_are_hidden_from_schedule(): void

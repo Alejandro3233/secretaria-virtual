@@ -16,13 +16,12 @@ class UserAdminController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        $section = in_array($request->query('estado'), ['activos', 'deshabilitados', 'historial'], true)
+        $section = in_array($request->query('estado'), ['activos', 'deshabilitados'], true)
             ? (string) $request->query('estado')
             : 'activos';
 
         $users = match ($section) {
             'deshabilitados' => User::query()->where('is_active', false),
-            'historial' => User::onlyTrashed(),
             default => User::query()->where('is_active', true),
         };
 
@@ -36,7 +35,6 @@ class UserAdminController extends Controller
             'userCounts' => [
                 'activos' => User::query()->where('is_active', true)->count(),
                 'deshabilitados' => User::query()->where('is_active', false)->count(),
-                'historial' => User::onlyTrashed()->count(),
             ],
         ]);
     }
@@ -119,25 +117,14 @@ class UserAdminController extends Controller
         }
 
         DB::transaction(function () use ($user): void {
-            $user->forceFill(['is_active' => false])->save();
             $this->closeSessions($user);
-            $user->delete();
+            $user->forceDelete();
         });
 
         return redirect()->route('users.index')->with(
             'user_status',
-            'Usuario retirado de la plataforma y guardado en el historial.',
+            'Usuario eliminado definitivamente.',
         );
-    }
-
-    public function restore(Request $request, int $user): RedirectResponse
-    {
-        $this->authorizeSuperAdmin($request);
-        $archivedUser = User::onlyTrashed()->findOrFail($user);
-        $archivedUser->restore();
-        $archivedUser->update(['is_active' => true]);
-
-        return redirect()->route('users.index')->with('user_status', 'Usuario restaurado y habilitado correctamente.');
     }
 
     private function isLastSuperAdmin(User $user): bool

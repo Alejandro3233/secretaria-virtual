@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Appointment extends Model
 {
@@ -60,13 +61,18 @@ class Appointment extends Model
         return $this->belongsTo(Stylist::class);
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(AppointmentPayment::class);
+    }
+
     public function trafficLightClass(?CarbonInterface $reference = null): string
     {
         if (in_array($this->status, ['cancelled', 'canceled'], true)) {
             return 'appointment-cancelled';
         }
 
-        if ($this->status === 'confirmed') {
+        if (in_array($this->status, ['confirmed', 'completed'], true)) {
             return 'appointment-confirmed';
         }
 

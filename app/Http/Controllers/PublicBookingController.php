@@ -216,6 +216,10 @@ class PublicBookingController extends Controller
             return false;
         }
 
+        if ($this->stylistOnVacation($stylist, $startsAt)) {
+            return false;
+        }
+
         $timezone = $clinic->localTimezone();
         $durationMinutes = $service?->duration_minutes ?? 60;
         $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
@@ -265,6 +269,14 @@ class PublicBookingController extends Controller
         $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 
         return in_array(strtolower($date->englishDayOfWeek), $workDays, true);
+    }
+
+    private function stylistOnVacation(Stylist $stylist, Carbon $date): bool
+    {
+        return $stylist->vacations()
+            ->whereDate('starts_on', '<=', $date->toDateString())
+            ->whereDate('ends_on', '>=', $date->toDateString())
+            ->exists();
     }
 
     private function workStartFor(Stylist $stylist, Carbon $date, string $timezone): Carbon

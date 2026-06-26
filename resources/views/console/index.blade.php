@@ -149,6 +149,7 @@
         }
 
         .live-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+        .nora-help-wrap { position: relative; display: inline-flex; }
         .nora-listening-button { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #ead7e0; border-radius: 999px; padding: 0 10px; background: rgba(255,255,255,.72); color: #66545c; font-size: 11px; font-weight: 900; cursor: pointer; }
         .nora-listening-button:hover { border-color: #d8b7c6; background: white; }
         .nora-listening-button .icon { width: 14px; height: 14px; }
@@ -157,6 +158,46 @@
         .nora-listening-button.is-listening .status-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); animation: nora-listening-pulse 1.5s infinite; }
         .nora-listening-button.is-paused { color: #92400e; border-color: #fde68a; background: #fffbeb; }
         .nora-listening-button.is-speaking { color: var(--brand); border-color: #f3bfd3; background: #fff1f6; }
+        .nora-command-help {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            z-index: 60;
+            width: min(360px, calc(100vw - 36px));
+            padding: 14px;
+            border: 1px solid #ead7e0;
+            border-radius: 8px;
+            background: #fff;
+            color: #31242a;
+            box-shadow: 0 18px 45px rgba(24, 18, 22, .18);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+            pointer-events: none;
+        }
+        .nora-help-wrap:hover .nora-command-help,
+        .nora-help-wrap:focus-within .nora-command-help {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .nora-command-help::before {
+            content: "";
+            position: absolute;
+            top: -6px;
+            right: 24px;
+            width: 10px;
+            height: 10px;
+            border-left: 1px solid #ead7e0;
+            border-top: 1px solid #ead7e0;
+            background: #fff;
+            transform: rotate(45deg);
+        }
+        .nora-command-help b { display: block; margin-bottom: 8px; font-size: 12px; color: var(--brand); }
+        .nora-command-help ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+        .nora-command-help li { font-size: 12px; line-height: 1.35; color: #4f3f47; }
+        .nora-command-help li span { color: #7a6570; }
         @keyframes nora-listening-pulse { 50% { box-shadow: 0 0 0 6px rgba(34,197,94,.08); } }
 
         .live-call-state {
@@ -537,11 +578,28 @@
                 <div class="live-call-head">
                     <span class="live-call-state"><span class="live-dot"></span>{{ $liveCall ? $liveStatusLabel : 'Sistema activo · supervisando' }}</span>
                     <div class="live-head-actions">
+                        <div class="nora-help-wrap">
                         <button class="nora-listening-button" type="button" data-nora-listening aria-pressed="false" title="Nora escucha órdenes mientras esta consola permanezca abierta">
                             <span class="status-dot" aria-hidden="true"></span>
                             <svg class="icon" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
                             <span data-nora-listening-label>Activar Nora</span>
                         </button>
+                            <div class="nora-command-help" id="nora-command-help" role="tooltip">
+                                <b>Prueba con Nora</b>
+                                <ul>
+                                    <li>Nora, llama a Rafael Rodriguez</li>
+                                    <li>Nora, llama a la proxima cita y dile que vamos retrasados 30 minutos</li>
+                                    <li>Nora, guarda en el cliente Rafael que es alergico al yodo</li>
+                                    <li>Nora, cual es mi proxima cita</li>
+                                    <li>Nora, cuantas citas tengo hoy</li>
+                                    <li>Nora, dame el resumen de hoy</li>
+                                    <li>Nora, recuerdame llamar a Ana en 15 minutos</li>
+                                    <li>Nora, lista mis recordatorios</li>
+                                    <li>Nora, que voces tienes</li>
+                                    <li><span>Tambien puedes decir solo:</span> ayuda</li>
+                                </ul>
+                            </div>
+                        </div>
                         <span class="live-call-time">
                             @if ($liveCall)
                                 {{ $clinic?->name ?? 'Salón sin configurar' }}
@@ -953,6 +1011,11 @@
             due: @json(route('nora-reminders.due')),
         };
         const noraClientCallRoute = @json(route('nora-client-calls.store'));
+        const noraClientAppointmentReminderRoute = @json(route('nora-client-appointment-reminders.store'));
+        const noraClientNoteRoute = @json(route('nora-client-notes.store'));
+        const noraNextAppointmentDelayRoute = @json(route('nora-next-appointment-delay.store'));
+        const noraStaffVacationRoute = @json(route('staff.vacations.index'));
+        const noraPaymentsTodayRoute = @json(route('nora-payments.today'));
         let dailyBriefingMarked = @json((bool) $dailyBriefing->played_at);
         let noraModeEnabled = window.localStorage.getItem(noraPreferenceKey) === '1';
         let noraRecognition = null;
@@ -1110,6 +1173,7 @@
 
         const speakDailyBriefing = () => speakWithNora(dailyBriefingMessage, { dailyBriefing: true });
         const normalizedVoiceText = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const noraWakeWordMatch = (transcript) => transcript.match(/\b(?:n+\s*o+\s*r+\s*a+|n+\s*o+\s*h+\s*r+\s*a+|n+\s*o+\s*u+\s*r+\s*a+|n+\s*o+\s*l+\s*a+|l+\s*o+\s*r+\s*a+|h+\s*o+\s*r+\s*a+|m+\s*i+\s*a+|m+\s*i+\s*j+\s*a+|m+\s*i+\s*l+\s*a+)\b/);
         const todayNoraHelpKey = () => new Date().toISOString().slice(0, 10);
 
         const speakNoraFallback = () => {
@@ -1467,6 +1531,80 @@
             return name.length >= 2 ? { name } : { error: 'name' };
         };
 
+        const parseNoraClientAppointmentReminderCommand = (command) => {
+            const reminderMatch = command.match(/\b(?:recuerdale|recordale|recuerdales|recordales|avisa|avisale|avisales)\s+(?:la\s+|su\s+)?cita\s+(?:a\s+)?(.+)$/)
+                || command.match(/\b(?:recuerda|recordatorio)\s+(?:la\s+|su\s+)?cita\s+(?:a\s+)?(.+)$/);
+            if (! reminderMatch) return null;
+
+            const name = reminderMatch[1]
+                .replace(/\b(?:por telefono|al telefono|ahora|por favor|cliente|clienta)\b/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            return name.length >= 2 ? { name } : { error: 'name' };
+        };
+
+        const parseNoraStaffVacationCommand = (command) => {
+            const vacationMatch = command.match(/\b(?:dime|lee|consulta|ver|muestrame|cuales son)?\s*(?:las\s+)?vacaciones\s+(?:de\s+)?(.+)$/)
+                || command.match(/\bcuando\s+(?:sale|esta|estara)\s+(.+?)\s+(?:de\s+)?vacaciones\b/);
+            if (! vacationMatch) return null;
+
+            const name = vacationMatch[1]
+                .replace(/\b(?:por favor|especialista|estilista|empleado|empleada)\b/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            return name.length >= 2 ? { name } : { error: 'name' };
+        };
+
+        const parseNoraDelayMinutes = (command) => {
+            if (/\bmedia\s+hora\b/.test(command)) return 30;
+            if (/\b(?:un\s+)?cuarto\s+(?:de\s+)?hora\b/.test(command)) return 15;
+            if (/\b(?:una|un)\s+hora\b/.test(command)) return 60;
+
+            const minuteMatch = command.match(/\b([a-z0-9]+(?:\s+y\s+[a-z0-9]+)?)\s*(minutos|minuto|mins|min)\b/);
+            if (minuteMatch) return parseNoraSpokenNumber(minuteMatch[1]);
+
+            const hourMatch = command.match(/\b([a-z0-9]+(?:\s+y\s+[a-z0-9]+)?)\s*(horas|hora)\b/);
+            if (hourMatch) return parseNoraSpokenNumber(hourMatch[1]) * 60;
+
+            return 0;
+        };
+
+        const parseNoraNextAppointmentDelayCommand = (command) => {
+            const mentionsNextAppointment = /\b(proxima|siguiente)\b/.test(command)
+                && /\b(cita|cliente|persona)\b/.test(command);
+            const mentionsDelay = /\b(retrasad|retraso|tarde|demora|demorados|demorad|atrasad|atraso)\b/.test(command);
+            const wantsNotify = /\b(llama|llamar|llamale|marca|marcar|avisa|avisar|informa|informar|dile|decirle|comunica|notifica)\b/.test(command);
+            if (! mentionsNextAppointment || ! mentionsDelay || ! wantsNotify) return null;
+
+            const minutes = parseNoraDelayMinutes(command);
+            if (! minutes) return { error: 'minutes' };
+            if (minutes < 1 || minutes > 240) return { error: 'range' };
+
+            return { minutes };
+        };
+
+        const parseNoraClientNoteCommand = (command) => {
+            const noteMatch = command.match(/\b(?:guarda|guardar|anota|anotar|agrega|agregar|añade|anade|poner|pon)\s+(?:una\s+)?(?:nota\s+)?(?:en|al|para)\s+(?:el\s+|la\s+)?(?:cliente|clienta)\s+(.+?)\s+(?:que|porque|con nota|nota|dice|es|tiene|esta|está)\s+(.+)$/)
+                || command.match(/\b(?:guarda|guardar|anota|anotar|agrega|agregar|añade|anade|poner|pon)\s+(?:en|al|para)\s+(.+?)\s+(?:que|porque|con nota|nota|dice|es|tiene|esta|está)\s+(.+)$/);
+            if (! noteMatch) return null;
+
+            const name = noteMatch[1]
+                .replace(/\b(?:cliente|clienta|por favor)\b/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const note = noteMatch[2]
+                .replace(/\b(?:por favor)\b/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (name.length < 2) return { error: 'name' };
+            if (note.length < 2) return { error: 'note', name };
+
+            return { name, note };
+        };
+
         const callNoraClient = async ({ name }) => {
             try {
                 speakWithNora('De acuerdo. Busco a '.concat(name, ' y preparo la llamada.'));
@@ -1482,10 +1620,76 @@
             }
         };
 
+        const notifyNoraNextAppointmentDelay = async ({ minutes }) => {
+            try {
+                speakWithNora('De acuerdo. Aviso a la proxima cita que vamos retrasados '.concat(minutes, ' minutos.'));
+                const payload = await noraReminderRequest(noraNextAppointmentDelayRoute, {
+                    method: 'POST',
+                    body: { minutes },
+                });
+                speakWithNora(payload.message || 'Listo. Estoy avisando a la proxima cita.');
+            } catch (error) {
+                let message = 'No pude avisar a la proxima cita ahora mismo.';
+                if (error.payload?.message) message = error.payload.message;
+                speakWithNora(message);
+            }
+        };
+
+        const remindNoraClientAppointment = async ({ name }) => {
+            try {
+                speakWithNora('De acuerdo. Busco la proxima cita de '.concat(name, ' y preparo el recordatorio.'));
+                const payload = await noraReminderRequest(noraClientAppointmentReminderRoute, {
+                    method: 'POST',
+                    body: { name },
+                });
+                speakWithNora(payload.message || 'Listo. Estoy recordandole su cita.');
+            } catch (error) {
+                let message = 'No pude iniciar el recordatorio de cita ahora mismo.';
+                if (error.payload?.message) message = error.payload.message;
+                speakWithNora(message);
+            }
+        };
+
+        const describeNoraStaffVacations = async ({ name }) => {
+            try {
+                const query = new URLSearchParams({ name });
+                const payload = await noraReminderRequest(noraStaffVacationRoute.concat('?').concat(query.toString()));
+                speakWithNora(payload.message || 'No encontre vacaciones proximas registradas.');
+            } catch (error) {
+                let message = 'No pude consultar las vacaciones ahora mismo.';
+                if (error.payload?.message) message = error.payload.message;
+                speakWithNora(message);
+            }
+        };
+
+        const describeNoraPaymentsToday = async () => {
+            try {
+                const payload = await noraReminderRequest(noraPaymentsTodayRoute);
+                speakWithNora(payload.message || 'No pude consultar los cobros de hoy.');
+            } catch (error) {
+                speakWithNora(error.payload?.message || 'No pude consultar los cobros de hoy ahora mismo.');
+            }
+        };
+
+        const saveNoraClientNote = async ({ name, note }) => {
+            try {
+                speakWithNora('De acuerdo. Guardo esa nota en el cliente '.concat(name, '.'));
+                const payload = await noraReminderRequest(noraClientNoteRoute, {
+                    method: 'POST',
+                    body: { name, note },
+                });
+                speakWithNora(payload.message || 'Listo. Guarde la nota del cliente.');
+            } catch (error) {
+                let message = 'No pude guardar la nota ahora mismo.';
+                if (error.payload?.message) message = error.payload.message;
+                speakWithNora(message);
+            }
+        };
+
         const answerNoraCommand = (rawTranscript) => {
             const transcript = normalizedVoiceText(rawTranscript);
-            const wakeWord = transcript.match(/\b(nora|nohra|lora|hora)\b/);
-            const hasKnownIntent = ['resumen', 'proxima', 'siguiente', 'cita', 'ganancia', 'ingreso', 'facturacion', 'hueco', 'adelantar', 'agenda', 'llamada', 'llama', 'llamar', 'llamale', 'marca', 'marcar', 'recordatorio', 'recuerdame', 'avisame', 'alerta', 'alarma', 'voz', 'mujer', 'hombre', 'femenina', 'masculina', 'cuales', 'cuantos', 'lista', 'listar', 'dime', 'lee', 'mostrar', 'muestrame', 'tengo', 'cancela', 'cancelar', 'borra', 'borrar', 'elimina', 'eliminar', 'quita', 'quitar', 'ayuda']
+            const wakeWord = noraWakeWordMatch(transcript);
+            const hasKnownIntent = ['resumen', 'proxima', 'siguiente', 'cita', 'ganancia', 'ingreso', 'facturacion', 'cobrado', 'cobros', 'caja', 'dinero', 'pagado', 'pagos', 'hueco', 'adelantar', 'agenda', 'llamada', 'llama', 'llamar', 'llamale', 'marca', 'marcar', 'avisa', 'avisar', 'informa', 'informar', 'dile', 'retraso', 'retrasad', 'tarde', 'demora', 'atraso', 'guarda', 'guardar', 'anota', 'anotar', 'agrega', 'agregar', 'anade', 'cliente', 'clienta', 'nota', 'recordatorio', 'recuerdame', 'avisame', 'alerta', 'alarma', 'vacaciones', 'voz', 'mujer', 'hombre', 'femenina', 'masculina', 'cuales', 'cuantos', 'lista', 'listar', 'dime', 'lee', 'mostrar', 'muestrame', 'tengo', 'cancela', 'cancelar', 'borra', 'borrar', 'elimina', 'eliminar', 'quita', 'quitar', 'ayuda']
                 .some((word) => transcript.includes(word));
             if (! wakeWord && ! hasKnownIntent && Date.now() >= noraAwaitingCommandUntil) return false;
             const command = wakeWord ? transcript.slice((wakeWord.index || 0) + wakeWord[0].length).trim() : transcript;
@@ -1499,11 +1703,25 @@
             noraAwaitingCommandUntil = 0;
             const cancelReminder = parseNoraCancelReminderCommand(command);
             const listReminder = cancelReminder ? false : parseNoraListReminderCommand(command);
-            const clientCall = (cancelReminder || listReminder) ? null : parseNoraClientCallCommand(command);
-            const voiceGender = (cancelReminder || listReminder || clientCall) ? null : parseNoraVoiceGenderCommand(command);
-            const reminder = (cancelReminder || listReminder || clientCall || voiceGender) ? null : parseNoraReminderCommand(command);
+            const nextDelay = (cancelReminder || listReminder) ? null : parseNoraNextAppointmentDelayCommand(command);
+            const appointmentReminder = (cancelReminder || listReminder || nextDelay) ? null : parseNoraClientAppointmentReminderCommand(command);
+            const staffVacation = (cancelReminder || listReminder || nextDelay || appointmentReminder) ? null : parseNoraStaffVacationCommand(command);
+            const clientNote = (cancelReminder || listReminder || nextDelay || appointmentReminder || staffVacation) ? null : parseNoraClientNoteCommand(command);
+            const reminder = (cancelReminder || listReminder || nextDelay || appointmentReminder || staffVacation || clientNote) ? null : parseNoraReminderCommand(command);
+            const clientCall = (cancelReminder || listReminder || nextDelay || appointmentReminder || staffVacation || clientNote || reminder) ? null : parseNoraClientCallCommand(command);
+            const voiceGender = (cancelReminder || listReminder || nextDelay || appointmentReminder || staffVacation || clientNote || reminder || clientCall) ? null : parseNoraVoiceGenderCommand(command);
             if (cancelReminder) cancelNoraReminders(cancelReminder);
             else if (listReminder) listNoraReminders();
+            else if (nextDelay?.error === 'minutes') speakWithNora('Claro. Dime cuantos minutos de retraso debo avisar a la proxima cita.');
+            else if (nextDelay?.error === 'range') speakWithNora('Puedo avisar retrasos entre uno y doscientos cuarenta minutos.');
+            else if (nextDelay) notifyNoraNextAppointmentDelay(nextDelay);
+            else if (appointmentReminder?.error === 'name') speakWithNora('Claro. Dime a que cliente quieres recordarle la cita.');
+            else if (appointmentReminder) remindNoraClientAppointment(appointmentReminder);
+            else if (staffVacation?.error === 'name') speakWithNora('Claro. Dime de que especialista quieres consultar vacaciones.');
+            else if (staffVacation) describeNoraStaffVacations(staffVacation);
+            else if (clientNote?.error === 'name') speakWithNora('Claro. Dime en que cliente quieres guardar la nota.');
+            else if (clientNote?.error === 'note') speakWithNora('Claro. Dime que nota quieres guardar para '.concat(clientNote.name, '.'));
+            else if (clientNote) saveNoraClientNote(clientNote);
             else if (clientCall?.error === 'name') speakWithNora('Claro. Dime a que cliente quieres que llame.');
             else if (clientCall) callNoraClient(clientCall);
             else if (voiceGender === 'list') describeNoraBrowserVoices();
@@ -1514,6 +1732,7 @@
             else if (command.includes('resumen')) speakDailyBriefing();
             else if (command.includes('proxima') || command.includes('siguiente')) speakWithNora(noraVoiceResponses.next);
             else if (command.includes('cuantas') || command.includes('numero de citas') || command === 'citas') speakWithNora(noraVoiceResponses.appointments);
+            else if (command.includes('cobrado') || command.includes('cobros') || command.includes('caja') || command.includes('dinero') || command.includes('pagado') || command.includes('pagos')) describeNoraPaymentsToday();
             else if (command.includes('ganancia') || command.includes('ingreso') || command.includes('facturacion')) speakWithNora(noraVoiceResponses.revenue);
             else if (command.includes('hueco') || command.includes('adelantar') || command.includes('completar la agenda')) speakWithNora(noraVoiceResponses.optimization);
             else if (command.includes('llamada') || command.includes('recordatorio')) speakWithNora(noraVoiceResponses.calls);

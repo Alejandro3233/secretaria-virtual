@@ -59,6 +59,7 @@
         .insight-list { display: grid; gap: 10px; }
         .insight { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 11px; align-items: center; padding: 12px; border: 1px solid #f0e5eb; border-radius: 8px; background: #fffafd; }
         .insight-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: #fce7ef; color: var(--brand); font-weight: 900; }
+        .insight-icon.plain { background: transparent; border-radius: 0; }
         .insight b, .insight span { display: block; }
         .insight span { margin-top: 3px; color: var(--muted); font-size: 12px; }
         .report-table { width: 100%; border-collapse: collapse; }
@@ -139,9 +140,9 @@
                 <div class="report-grid-2">
                     <article class="card"><div class="report-card-title"><div><h2>Evolución de ingresos</h2><span>Últimos seis meses.</span></div></div><div class="trend-chart">@foreach($monthlyTrend as $trend)<div class="trend-column"><span class="trend-value">${{ number_format($trend['revenue_cents']/100,0) }}</span><div class="trend-bar-wrap"><div class="trend-bar" style="height:{{ max(4,round(($trend['revenue_cents']/$maxTrendRevenue)*100)) }}%;"></div></div><span class="trend-label">{{ $trend['label'] }}</span></div>@endforeach</div></article>
                     <article class="card"><div class="report-card-title"><div><h2>Lectura rápida</h2><span>Lo más importante del período.</span></div></div><div class="insight-list">
-                        <div class="insight"><span class="insight-icon">★</span><div><b>{{ $serviceReport->first()['service']->name ?? 'Sin servicio destacado' }}</b><span>Servicio con mayor ingreso previsto.</span></div></div>
-                        <div class="insight"><span class="insight-icon">↗</span><div><b>{{ $busiestWeekday }}</b><span>Día de la semana con mayor actividad.</span></div></div>
-                        <div class="insight"><span class="insight-icon">%</span><div><b>{{ $noShowAppointments->count() }} inasistencia(s)</b><span>Conviene revisar recordatorios si este valor aumenta.</span></div></div>
+                        <div class="insight"><span class="insight-icon plain">★</span><div><b>{{ $serviceReport->first()['service']->name ?? 'Sin servicio destacado' }}</b><span>Servicio con mayor ingreso previsto.</span></div></div>
+                        <div class="insight"><span class="insight-icon plain">↗</span><div><b>{{ $busiestWeekday }}</b><span>Día de la semana con mayor actividad.</span></div></div>
+                        <div class="insight"><span class="insight-icon plain">%</span><div><b>{{ $noShowAppointments->count() }} inasistencia(s)</b><span>Conviene revisar recordatorios si este valor aumenta.</span></div></div>
                     </div></article>
                 </div>
             </div>

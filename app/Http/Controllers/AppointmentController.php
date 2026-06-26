@@ -32,7 +32,7 @@ class AppointmentController extends Controller
             : now($timezone);
 
         $appointmentsQuery = Appointment::query()
-            ->with(['client', 'service', 'stylist'])
+            ->with(['client', 'service', 'stylist', 'payments' => fn ($query) => $query->latest()])
             ->where('clinic_id', $clinic->id);
 
         if ($period === 'day') {
@@ -95,6 +95,7 @@ class AppointmentController extends Controller
                     ->sortByDesc('created_at')
                     ->first()?->status,
             );
+            $appointment->setAttribute('latest_payment', $appointment->payments->first());
         });
 
         return view('appointments.index', [
@@ -128,7 +129,7 @@ class AppointmentController extends Controller
         $data = $request->validate([
             'starts_at' => ['required', 'date'],
             'duration_minutes' => ['required', 'integer', 'min:15', 'max:480'],
-            'status' => ['required', 'string', 'in:pending,confirmed,cancelled,canceled'],
+            'status' => ['required', 'string', 'in:pending,confirmed,completed,cancelled,canceled'],
             'service_id' => ['nullable', 'integer', 'exists:services,id'],
             'stylist_id' => ['nullable', 'integer', 'exists:stylists,id'],
             'reason' => ['nullable', 'string', 'max:255'],
@@ -215,8 +216,23 @@ class AppointmentController extends Controller
             'reminder_sms_enabled' => ['required', 'boolean'],
         ]);
 
+        $voiceReminderAnswered = DB::table('notifications')
+            ->where('appointment_id', $appointment->id)
+            ->where('event', 'appointment_reminder_call')
+            ->whereIn('status', ['answered', 'completed', 'in-progress'])
+            ->exists();
+
+        if ($voiceReminderAnswered && (bool) $data['reminder_call_enabled']) {
+            $appointment->update([
+                'reminder_call_enabled' => false,
+                'reminder_sms_enabled' => (bool) $data['reminder_sms_enabled'],
+            ]);
+
+            return back()->with('appointment_error', 'Cliente ya fue llamado.');
+        }
+
         $appointment->update([
-            'reminder_call_enabled' => (bool) $data['reminder_call_enabled'],
+            'reminder_call_enabled' => $voiceReminderAnswered ? false : (bool) $data['reminder_call_enabled'],
             'reminder_sms_enabled' => (bool) $data['reminder_sms_enabled'],
         ]);
 

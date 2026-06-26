@@ -2,7 +2,7 @@
 
 @section('title', 'Gestion de usuarios - Secretaria Virtual')
 @section('page_title', 'Gestion de usuarios')
-@section('page_subtitle', 'Administra accesos y conserva un historial seguro de usuarios.')
+@section('page_subtitle', 'Administra accesos de usuarios activos y deshabilitados.')
 @section('page_actions')
     <a class="btn" href="/base-de-datos/users">Ver tabla de usuarios</a>
 @endsection
@@ -116,12 +116,11 @@
     <nav class="user-tabs" aria-label="Estados de usuarios">
         <a class="{{ $section === 'activos' ? 'active' : '' }}" href="{{ route('users.index', ['estado' => 'activos']) }}">Activos ({{ $userCounts['activos'] }})</a>
         <a class="{{ $section === 'deshabilitados' ? 'active' : '' }}" href="{{ route('users.index', ['estado' => 'deshabilitados']) }}">Deshabilitados ({{ $userCounts['deshabilitados'] }})</a>
-        <a class="{{ $section === 'historial' ? 'active' : '' }}" href="{{ route('users.index', ['estado' => 'historial']) }}">Historial de eliminados ({{ $userCounts['historial'] }})</a>
     </nav>
 
     <article class="card" style="overflow:auto;">
         <div class="section-title">
-            <h2>{{ $section === 'historial' ? 'Historial de usuarios' : ($section === 'deshabilitados' ? 'Usuarios deshabilitados' : 'Usuarios activos') }}</h2>
+            <h2>{{ $section === 'deshabilitados' ? 'Usuarios deshabilitados' : 'Usuarios activos' }}</h2>
             <span class="subtitle">{{ $users->count() }} usuarios</span>
         </div>
 
@@ -151,9 +150,7 @@
                         </td>
                         <td><span class="status {{ $user->is_super_admin ? 'wait' : 'info' }}">{{ $user->is_super_admin ? 'Super admin' : 'Usuario' }}</span></td>
                         <td>
-                            @if($user->trashed())
-                                <span class="status danger">Eliminado</span>
-                            @elseif($user->is_active)
+                            @if($user->is_active)
                                 <span class="status ok">Activo</span>
                             @else
                                 <span class="status wait">Deshabilitado</span>
@@ -162,12 +159,7 @@
                         <td>{{ $user->created_at?->format('d/m/Y H:i') }}</td>
                         <td>
                             <div class="user-actions">
-                                @if($user->trashed())
-                                    <form method="POST" action="{{ route('users.restore', $user->id) }}">
-                                        @csrf
-                                        <button class="btn user-enable" type="submit">Restaurar usuario</button>
-                                    </form>
-                                @elseif(auth()->id() === $user->id)
+                                @if(auth()->id() === $user->id)
                                     <span class="subtitle">Tu cuenta</span>
                                 @else
                                     <form method="POST" action="{{ route('users.status', $user) }}">
@@ -175,7 +167,7 @@
                                         <input type="hidden" name="is_active" value="{{ $user->is_active ? 0 : 1 }}">
                                         <button class="btn {{ $user->is_active ? '' : 'user-enable' }}" type="submit">{{ $user->is_active ? 'Deshabilitar' : 'Habilitar' }}</button>
                                     </form>
-                                    <form method="POST" action="{{ route('users.destroy', $user) }}" onsubmit="return confirm('El usuario desaparecerá de la plataforma, pero sus datos se conservarán en el historial. ¿Continuar?');">
+                                    <form method="POST" action="{{ route('users.destroy', $user) }}" onsubmit="return confirm('El usuario se eliminará definitivamente y no se podrá restaurar. ¿Continuar?');">
                                         @csrf @method('DELETE')
                                         <button class="btn user-danger" type="submit">Eliminar</button>
                                     </form>
