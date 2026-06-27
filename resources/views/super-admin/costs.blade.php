@@ -2,7 +2,7 @@
 
 @section('title', 'Costos por salon - Secretary365')
 @section('page_title', 'Costos por salon')
-@section('page_subtitle', 'Consumo estimado de SMS, llamadas, correos y maquina por negocio.')
+@section('page_subtitle', 'Consumo estimado de comunicaciones, peticiones y recursos por negocio.')
 
 @section('content')
     <style>
@@ -39,6 +39,15 @@
     @php
         $money = fn (float $amount): string => '$'.number_format($amount, 4);
         $moneyTotal = fn (float $amount): string => '$'.number_format($amount, 2);
+        $bytes = function (int $value): string {
+            if ($value >= 1073741824) return number_format($value / 1073741824, 2).' GB';
+            if ($value >= 1048576) return number_format($value / 1048576, 2).' MB';
+            if ($value >= 1024) return number_format($value / 1024, 2).' KB';
+            return $value.' B';
+        };
+        $processingTime = fn (int $milliseconds): string => $milliseconds >= 1000
+            ? number_format($milliseconds / 1000, 2).' s'
+            : $milliseconds.' ms';
     @endphp
 
     <div class="cost-shell">
@@ -72,7 +81,7 @@
             <article class="cost-kpi">
                 <span>Maquina mes</span>
                 <b>{{ $moneyTotal($summary['month']['machine_cost']) }}</b>
-                <small>Repartido entre {{ $activeClinics }} salon{{ $activeClinics === 1 ? '' : 'es' }}.</small>
+                <small>{{ $hasUsageMetrics ? 'Repartido proporcionalmente según el consumo medido.' : 'Sin mediciones aún; repartido por igual.' }}</small>
             </article>
         </section>
 
@@ -100,6 +109,8 @@
                                     <td>
                                         <b>{{ $row['clinic']->name }}</b>
                                         <span>{{ $row['clinic']->email ?: 'Sin correo' }}</span>
+                                        <span>{{ number_format($row['month']['usage']['requests']) }} peticiones · {{ $row['month']['usage']['active_minutes'] }} min activos</span>
+                                        <span>RAM {{ $bytes($row['month']['usage']['memory_bytes']) }} · Disco/datos {{ $bytes($row['month']['usage']['disk_bytes']) }} · Proceso {{ $processingTime($row['month']['usage']['duration_ms']) }}</span>
                                     </td>
                                     <td class="numeric">{{ $row['day']['sms_count'] }}</td>
                                     <td class="numeric">{{ $row['day']['call_count'] }}</td>
@@ -130,8 +141,8 @@
                 <div class="cost-note-row"><span>Cada llamada</span><b>{{ $money($unitCosts['call']) }}</b></div>
                 <div class="cost-note-row"><span>Cada correo</span><b>{{ $money($unitCosts['email']) }}</b></div>
                 <div class="cost-note-row"><span>Maquina mensual total</span><b>{{ $moneyTotal($machineMonthlyUsd) }}</b></div>
-                <div class="cost-note-row"><span>Maquina por salon</span><b>{{ $moneyTotal($unitCosts['machine_month']) }}</b></div>
-                <p class="subtitle" style="line-height:1.5;">Las llamadas se cuentan como eventos. Si necesitas costo exacto por duracion, el siguiente paso es guardar minutos reales de Twilio.</p>
+                <div class="cost-note-row"><span>Reparto de maquina</span><b>{{ $hasUsageMetrics ? 'Por consumo' : 'Por igual' }}</b></div>
+                <p class="subtitle" style="line-height:1.5;">RAM, disco/datos, tiempo de proceso y actividad son aproximaciones registradas desde ahora. El costo seguirá en $0.00 hasta configurar <code>SV_COST_MACHINE_MONTHLY_USD</code>. Las llamadas se cuentan como eventos.</p>
             </aside>
         </div>
     </div>

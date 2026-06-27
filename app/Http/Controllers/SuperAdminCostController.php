@@ -22,29 +22,36 @@ class SuperAdminCostController extends Controller
         $dayEnd = $today->copy()->endOfDay();
         $machineMonthlyUsd = $this->cost('machine_monthly_usd');
         $activeClinics = max(1, Clinic::query()->count());
-        $machineMonthlyShare = $machineMonthlyUsd / $activeClinics;
-        $machineDailyShare = $machineMonthlyShare / max(1, $selectedMonth->daysInMonth);
         $unitCosts = [
             'sms' => $this->cost('sms_usd'),
             'call' => $this->cost('call_usd'),
             'email' => $this->cost('email_usd'),
-            'machine_day' => $machineDailyShare,
-            'machine_month' => $machineMonthlyShare,
+            'machine_day' => $machineMonthlyUsd / max(1, $selectedMonth->daysInMonth),
+            'machine_month' => $machineMonthlyUsd,
         ];
+
+        $monthUsage = $this->usageFor($monthStart, $monthEnd);
+        $dayUsage = $this->usageFor($dayStart, $dayEnd);
+        $monthShares = $this->usageShares($monthUsage, $activeClinics);
+        $dayShares = $this->usageShares($dayUsage, $activeClinics);
 
         $clinics = Clinic::query()
             ->orderBy('name')
             ->get()
-            ->map(function (Clinic $clinic) use ($monthStart, $monthEnd, $dayStart, $dayEnd, $unitCosts): array {
+            ->map(function (Clinic $clinic) use ($monthStart, $monthEnd, $dayStart, $dayEnd, $unitCosts, $monthUsage, $dayUsage, $monthShares, $dayShares): array {
                 $counts = [
                     'day' => $this->countsFor($clinic, $dayStart, $dayEnd),
                     'month' => $this->countsFor($clinic, $monthStart, $monthEnd),
                 ];
 
+                $clinicUnitCosts = $unitCosts;
+                $clinicUnitCosts['machine_day'] *= $dayShares[$clinic->id] ?? 0;
+                $clinicUnitCosts['machine_month'] *= $monthShares[$clinic->id] ?? 0;
+
                 return [
                     'clinic' => $clinic,
-                    'day' => $this->totalsFor($counts['day'], $unitCosts, 'day'),
-                    'month' => $this->totalsFor($counts['month'], $unitCosts, 'month'),
+                    'day' => $this->totalsFor($counts['day'], $clinicUnitCosts, 'day') + ['usage' => $dayUsage[$clinic->id] ?? $this->emptyUsage()],
+                    'month' => $this->totalsFor($counts['month'], $clinicUnitCosts, 'month') + ['usage' => $monthUsage[$clinic->id] ?? $this->emptyUsage()],
                 ];
             });
 
@@ -57,10 +64,70 @@ class SuperAdminCostController extends Controller
             'selectedMonth' => $selectedMonth,
             'unitCosts' => $unitCosts,
             'machineMonthlyUsd' => $machineMonthlyUsd,
+            'hasUsageMetrics' => collect($monthUsage)->sum('requests') > 0,
             'activeClinics' => $activeClinics,
             'clinics' => $clinics,
             'summary' => $summary,
         ]);
+    }
+
+    private function usageFor(Carbon $start, Carbon $end): array
+    {
+        $rows = DB::table('clinic_request_metrics')
+            ->whereBetween('recorded_at', [$start, $end])
+            ->select('clinic_id', DB::raw('count(*) as requests'), DB::raw('sum(duration_ms) as duration_ms'), DB::raw('sum(memory_bytes) as memory_bytes'), DB::raw('sum(disk_bytes) as disk_bytes'))
+            ->groupBy('clinic_id')
+            ->get()
+            ->keyBy('clinic_id');
+
+        $timestamps = DB::table('clinic_request_metrics')
+            ->whereBetween('recorded_at', [$start, $end])
+            ->orderBy('recorded_at')
+            ->get(['clinic_id', 'recorded_at'])
+            ->groupBy('clinic_id');
+
+        return $rows->mapWithKeys(function ($row) use ($timestamps): array {
+            $activeSeconds = 0;
+            $previous = null;
+
+            foreach ($timestamps->get($row->clinic_id, collect()) as $metric) {
+                $current = Carbon::parse($metric->recorded_at);
+                $gap = $previous ? $previous->diffInSeconds($current) : 60;
+                $activeSeconds += $gap <= 900 ? max(0, $gap) : 60;
+                $previous = $current;
+            }
+
+            return [(int) $row->clinic_id => [
+                'requests' => (int) $row->requests,
+                'duration_ms' => (int) $row->duration_ms,
+                'memory_bytes' => (int) $row->memory_bytes,
+                'disk_bytes' => (int) $row->disk_bytes,
+                'active_minutes' => (int) ceil($activeSeconds / 60),
+            ]];
+        })->all();
+    }
+
+    private function usageShares(array $usage, int $clinicCount): array
+    {
+        if (collect($usage)->sum('requests') === 0) {
+            return Clinic::query()->pluck('id')->mapWithKeys(fn ($id): array => [(int) $id => 1 / $clinicCount])->all();
+        }
+
+        $totals = collect(['requests', 'duration_ms', 'memory_bytes', 'disk_bytes'])
+            ->mapWithKeys(fn (string $metric): array => [$metric => collect($usage)->sum($metric)])
+            ->filter(fn ($total): bool => $total > 0);
+        $metrics = $totals->keys();
+
+        return collect($usage)->mapWithKeys(function (array $row, int $clinicId) use ($metrics, $totals): array {
+            $share = $metrics->avg(fn (string $metric): float => $row[$metric] / $totals[$metric]);
+
+            return [$clinicId => $share];
+        })->all();
+    }
+
+    private function emptyUsage(): array
+    {
+        return ['requests' => 0, 'duration_ms' => 0, 'memory_bytes' => 0, 'disk_bytes' => 0, 'active_minutes' => 0];
     }
 
     private function selectedMonth(Request $request): Carbon

@@ -80,4 +80,48 @@ class SuperAdminCostTest extends TestCase
             ->assertSee('Salon Aurora')
             ->assertSee('$30.13');
     }
+
+    public function test_a_clinic_request_records_resource_usage(): void
+    {
+        $clinic = Clinic::query()->create([
+            'name' => 'Salon Medido',
+            'email' => 'medido@example.com',
+            'timezone' => 'Europe/Madrid',
+        ]);
+
+        $this->get(route('public-bookings.show', $clinic))->assertOk();
+
+        $this->assertDatabaseHas('clinic_request_metrics', ['clinic_id' => $clinic->id]);
+        $metric = DB::table('clinic_request_metrics')->where('clinic_id', $clinic->id)->first();
+
+        $this->assertGreaterThan(0, $metric->duration_ms);
+        $this->assertGreaterThan(0, $metric->disk_bytes);
+    }
+
+    public function test_machine_cost_is_allocated_to_the_clinic_with_recorded_usage(): void
+    {
+        config()->set('services.usage_costs.machine_monthly_usd', 40);
+
+        $superAdmin = User::factory()->create(['is_super_admin' => true]);
+        $usedClinic = Clinic::query()->create(['name' => 'Salon Activo', 'timezone' => 'Europe/Madrid']);
+        Clinic::query()->create(['name' => 'Salon Inactivo', 'timezone' => 'Europe/Madrid']);
+
+        DB::table('clinic_request_metrics')->insert([
+            'clinic_id' => $usedClinic->id,
+            'duration_ms' => 500,
+            'memory_bytes' => 1048576,
+            'disk_bytes' => 2048,
+            'recorded_at' => now(),
+        ]);
+
+        $this->actingAs($superAdmin)
+            ->get(route('super-admin.costs'))
+            ->assertOk()
+            ->assertViewHas('clinics', function ($clinics) use ($usedClinic): bool {
+                $rows = $clinics->keyBy(fn (array $row): int => $row['clinic']->id);
+
+                return $rows[$usedClinic->id]['month']['machine_cost'] === 40.0
+                    && $rows->first(fn (array $row): bool => $row['clinic']->id !== $usedClinic->id)['month']['machine_cost'] === 0.0;
+            });
+    }
 }

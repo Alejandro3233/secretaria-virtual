@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\RecordClinicRequestUsage;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -13,7 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [EnsureUserIsActive::class]);
+        $middleware->web(append: [EnsureUserIsActive::class, RecordClinicRequestUsage::class]);
         $middleware->validateCsrfTokens(except: [
             'twilio/voice/*',
             'stripe/webhook',
