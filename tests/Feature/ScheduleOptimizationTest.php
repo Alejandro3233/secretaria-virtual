@@ -20,6 +20,7 @@ class ScheduleOptimizationTest extends TestCase
 
     public function test_it_proposes_the_latest_compatible_appointment_for_the_earliest_gap(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-06-20 12:00:00', 'UTC'));
         $timezone = 'Europe/Madrid';
         $clinic = Clinic::create(['name' => 'Salon', 'email' => 'salon@example.com', 'timezone' => $timezone]);
         $stylist = Stylist::create([
@@ -158,6 +159,7 @@ class ScheduleOptimizationTest extends TestCase
         $otherPrimaryService = Service::create(['clinic_id' => $clinic->id, 'name' => 'Color', 'duration_minutes' => 60, 'is_active' => true]);
         $busy = Stylist::create(['clinic_id' => $clinic->id, 'service_id' => $service->id, 'name' => 'Sofia', 'work_days' => ['monday'], 'work_starts_at' => '08:00', 'work_ends_at' => '20:00', 'is_active' => true]);
         $available = Stylist::create(['clinic_id' => $clinic->id, 'service_id' => $otherPrimaryService->id, 'name' => 'Ana', 'work_days' => ['monday'], 'work_starts_at' => '08:00', 'work_ends_at' => '20:00', 'is_active' => true]);
+        $available->services()->sync([$service->id]);
         $client = Client::create(['clinic_id' => $clinic->id, 'first_name' => 'Miguel', 'phone' => '+12135550123']);
         Appointment::create(['clinic_id' => $clinic->id, 'stylist_id' => $busy->id, 'client_id' => $client->id, 'starts_at' => '2026-06-22 08:00:00', 'ends_at' => '2026-06-22 18:00:00', 'status' => 'pending']);
         $late = Appointment::create(['clinic_id' => $clinic->id, 'service_id' => $service->id, 'stylist_id' => $busy->id, 'client_id' => $client->id, 'starts_at' => '2026-06-22 18:35:00', 'ends_at' => '2026-06-22 19:35:00', 'status' => 'pending']);

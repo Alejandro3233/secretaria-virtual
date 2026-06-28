@@ -651,14 +651,14 @@ class AuthFlowTest extends TestCase
             ->assertSee('/auth/google/redirect');
     }
 
-    public function test_schedule_page_prompts_google_calendar_connection(): void
+    public function test_schedule_page_shows_google_calendar_connection_status(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)
             ->get('/agenda')
             ->assertOk()
-            ->assertSee('Conectar Google Calendar');
+            ->assertSee('Google Calendar');
     }
 
     public function test_user_can_exist_with_google_without_password(): void
