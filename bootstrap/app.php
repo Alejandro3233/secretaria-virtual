@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [EnsureUserIsActive::class, RecordClinicRequestUsage::class]);
         $middleware->validateCsrfTokens(except: [
             'twilio/voice/*',
+            'twilio/sms/campaign-status',
             'stripe/webhook',
             'cita/*/adelantar',
         ]);

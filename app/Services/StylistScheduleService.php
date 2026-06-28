@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Stylist;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
 class StylistScheduleService
@@ -31,14 +32,15 @@ class StylistScheduleService
             return $stylist->name.' esta de vacaciones del '.$range.'.'.$reason;
         }
 
-        $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
         $day = strtolower($startsAt->englishDayOfWeek);
-        $workStart = $this->atTime($startsAt, $stylist->work_starts_at ?: '08:00');
-        $workEnd = $this->atTime($startsAt, $stylist->work_ends_at ?: '21:00');
+        $daySchedule = $stylist->scheduleForDate($startsAt);
+        $workStart = $this->atTime($startsAt, $daySchedule['start'] ?? '08:00');
+        $workEnd = $this->atTime($startsAt, $daySchedule['end'] ?? '21:00');
         $schedule = $workStart->format('g:i A').' a '.$workEnd->format('g:i A');
 
-        if (! in_array($day, $workDays, true)) {
-            $configuredDays = collect($workDays)
+        if (! $daySchedule) {
+            $configuredDays = collect($stylist->weekly_schedule ?: array_fill_keys($stylist->work_days ?: [], ['enabled' => true]))
+                ->filter(fn ($configured) => ! empty($configured['enabled']))->keys()
                 ->map(fn (string $workDay): string => self::DAYS[$workDay] ?? $workDay)
                 ->implode(', ');
 
@@ -49,6 +51,13 @@ class StylistScheduleService
         if ($startsAt->lessThan($workStart) || $endsAt->greaterThan($workEnd)) {
             return 'La cita queda fuera del horario de '.$stylist->name.'. Ese día trabaja de '.$schedule
                 .'. La cita debe comenzar y terminar dentro de su jornada.';
+        }
+
+        if ($stylist->isOnBreak($startsAt, $endsAt)) {
+            $daySchedule = $stylist->scheduleForDate($startsAt);
+            return 'La cita coincide con el descanso de '.$stylist->name.', de '
+                .Carbon::parse($daySchedule['break_start'])->format('g:i A').' a '
+                .Carbon::parse($daySchedule['break_end'])->format('g:i A').'.';
         }
 
         return null;

@@ -167,7 +167,7 @@ class ClientController extends Controller
         $attended = $past->whereIn('status', ['attended', 'completed']);
         $cancelled = $appointments->whereIn('status', ['cancelled', 'canceled']);
         $noShows = $past->where('status', 'no_show');
-        $revenueCents = $attended->sum(fn (Appointment $appointment): int => (int) ($appointment->service?->price_cents ?? 0));
+        $revenueCents = $attended->sum(fn (Appointment $appointment): int => (int) ($appointment->campaign_price_cents ?? $appointment->service?->price_cents ?? 0));
         $clientNoticeMinutes = $appointments
             ->filter(fn (Appointment $appointment): bool => (bool) $appointment->getAttribute('cancellation_by_client'))
             ->pluck('cancellation_notice_minutes');
@@ -205,15 +205,23 @@ class ClientController extends Controller
 
     private function validated(Request $request, int $clinicId, ?int $clientId = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:40', Rule::unique('clients', 'phone')->where('clinic_id', $clinicId)->ignore($clientId)],
             'email' => ['nullable', 'email', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'notification_preference' => ['required', Rule::in(['both', 'sms', 'email', 'none'])],
+            'marketing_email_consent' => ['nullable', 'boolean'],
+            'marketing_sms_consent' => ['nullable', 'boolean'],
             'notes' => ['nullable', 'string', 'max:3000'],
         ]);
+
+        $data['marketing_email_consent_at'] = $request->boolean('marketing_email_consent') ? now() : null;
+        $data['marketing_sms_consent_at'] = $request->boolean('marketing_sms_consent') ? now() : null;
+        unset($data['marketing_email_consent'], $data['marketing_sms_consent']);
+
+        return $data;
     }
 
     private function ensureClinic(Client $client, int $clinicId): void

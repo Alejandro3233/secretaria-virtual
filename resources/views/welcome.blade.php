@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta name="description" content="Secretary365 atiende las llamadas de tu salon, reserva citas y mantiene tu agenda al dia, las 24 horas.">
     <title>Secretary365 | Recepcionista IA para salones de belleza</title>
@@ -41,8 +41,8 @@
         .actions { display: flex; align-items: center; gap: 10px; }
         .btn { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 0 20px; color: var(--ink); background: var(--white); font-weight: 700; transition: .2s ease; cursor: pointer; }
         .btn:hover { border-color: #d7c1c9; transform: translateY(-1px); }
-        .btn.primary { color: #fff; border-color: var(--rose); background: var(--rose); box-shadow: 0 12px 24px rgba(183, 45, 88, .2); }
-        .btn.primary:hover { border-color: var(--rose-dark); background: var(--rose-dark); }
+        .btn.primary { color: #fff; border-color: #111827; background: #111827; box-shadow: 0 12px 24px rgba(17,24,39,.18); }
+        .btn.primary:hover { border-color: #000; background: #000; }
         .btn.dark { color: #fff; border-color: var(--ink); background: var(--ink); }
         .btn.small { min-height: 40px; padding: 0 16px; font-size: 14px; }
 

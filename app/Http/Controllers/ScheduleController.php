@@ -9,6 +9,7 @@ use App\Models\Stylist;
 use App\Services\AppointmentService;
 use App\Services\ClinicResolver;
 use App\Services\StylistScheduleService;
+use App\Services\ResourceAvailabilityService;
 use App\Services\GoogleCalendarService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -63,6 +64,10 @@ class ScheduleController extends Controller
             }
 
             $stylists = Stylist::query()
+                ->with(['vacations' => fn ($query) => $query
+                    ->whereDate('starts_on', '<=', $queryEnd->toDateString())
+                    ->whereDate('ends_on', '>=', $queryStart->toDateString())
+                    ->orderBy('starts_on')])
                 ->where('clinic_id', $clinic->id)
                 ->where('is_active', true)
                 ->when(! $clinic->google_ever_synced_at, fn ($query) => $query->where('is_internal', false))
@@ -158,7 +163,7 @@ class ScheduleController extends Controller
             'clinic' => $clinic,
             'clients' => $clinic->clients()->orderBy('first_name')->get(),
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
-            'stylists' => $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get(),
+            'stylists' => $clinic->stylists()->with('services')->where('is_active', true)->where('is_internal', false)->orderBy('name')->get(),
             'timezone' => $clinic->localTimezone(),
         ]);
     }
@@ -195,7 +200,7 @@ class ScheduleController extends Controller
         ]));
     }
 
-    public function store(Request $request, AppointmentService $appointments, ClinicResolver $clinics, StylistScheduleService $schedules): RedirectResponse
+    public function store(Request $request, AppointmentService $appointments, ClinicResolver $clinics, StylistScheduleService $schedules, ResourceAvailabilityService $resources): RedirectResponse
     {
         $clinic = $clinics->currentOrCreate($request->user());
 
@@ -227,8 +232,16 @@ class ScheduleController extends Controller
             ? Stylist::query()->where('clinic_id', $clinic->id)->findOrFail($data['stylist_id'])
             : null;
 
+        if ($stylist && $service && ! $stylist->canPerformService($service->id)) {
+            throw ValidationException::withMessages(['stylist_id' => 'Este empleado no tiene asociado el servicio seleccionado.']);
+        }
+
         if ($stylist && ($scheduleError = $schedules->validationMessage($stylist, $startsAt, $endsAt))) {
             throw \Illuminate\Validation\ValidationException::withMessages(['starts_at' => $scheduleError]);
+        }
+
+        if ($resourceError = $resources->validationMessage($service, $startsAt, $endsAt)) {
+            throw ValidationException::withMessages(['starts_at' => $resourceError]);
         }
 
         $client = $this->resolveClient($clinic, $data);
@@ -259,7 +272,7 @@ class ScheduleController extends Controller
         return redirect('/agenda')->with('google_calendar_status', $message);
     }
 
-    public function move(Request $request, Appointment $appointment, AppointmentService $appointments, StylistScheduleService $schedules): JsonResponse
+    public function move(Request $request, Appointment $appointment, AppointmentService $appointments, StylistScheduleService $schedules, ResourceAvailabilityService $resources): JsonResponse
     {
         $clinic = $this->appointmentClinic($request, $appointment);
         $appointment->loadMissing('service');
@@ -286,8 +299,16 @@ class ScheduleController extends Controller
             : (int) ($appointment->service?->duration_minutes ?? 60);
         $endsAt = $startsAt->copy()->addMinutes($durationMinutes);
 
+        if ($stylist && $appointment->service_id && ! $stylist->canPerformService($appointment->service_id)) {
+            return response()->json(['message' => 'Este empleado no realiza el servicio de la cita.'], 422);
+        }
+
         if ($stylist && ($scheduleError = $schedules->validationMessage($stylist, $startsAt, $endsAt))) {
             return response()->json(['message' => $scheduleError], 422);
+        }
+
+        if ($resourceError = $resources->validationMessage($appointment->service, $startsAt, $endsAt, $appointment->id)) {
+            return response()->json(['message' => $resourceError], 422);
         }
 
         $conflict = Appointment::query()

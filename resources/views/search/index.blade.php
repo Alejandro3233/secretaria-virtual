@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Buscar - Secretaria Virtual')
+@section('title', 'Buscar - Secretary365')
 @section('page_title', 'Buscar')
 @section('page_subtitle', $query !== '' ? 'Resultados para "'.$query.'".' : 'Busca citas, clientes, servicios o estilistas.')
 

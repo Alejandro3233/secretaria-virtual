@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\Client;
 use App\Models\Clinic;
+use App\Models\FlashCampaignRecipient;
 use App\Models\Service;
 use App\Models\Stylist;
 use App\Services\AppointmentService;
 use App\Services\GoogleCalendarService;
+use App\Services\ResourceAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -16,7 +18,7 @@ use Illuminate\View\View;
 
 class PublicBookingController extends Controller
 {
-    public function __construct(private readonly GoogleCalendarService $googleCalendar)
+    public function __construct(private readonly GoogleCalendarService $googleCalendar, private readonly ResourceAvailabilityService $resources)
     {
     }
 
@@ -51,7 +53,7 @@ class PublicBookingController extends Controller
 
         return view('public.bookings.show', [
             'clinic' => $clinic,
-            'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
+            'services' => $clinic->services()->with('activeAddons')->where('is_active', true)->orderBy('name')->get(),
             'stylists' => $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get(),
         ]);
     }
@@ -62,14 +64,29 @@ class PublicBookingController extends Controller
         $googleCalendarError = $this->syncGoogleCalendarIfConnected($clinic);
         $clinic->refresh();
 
-        $services = $clinic->services()->where('is_active', true)->orderBy('name')->get();
+        $services = $clinic->services()->with('activeAddons')->where('is_active', true)->orderBy('name')->get();
         $stylists = $clinic->stylists()->where('is_active', true)->where('is_internal', false)->orderBy('name')->get();
         $selectedService = $this->selectedService($clinic, $request, $services->first());
+        $offerRecipient = $this->offerRecipient($clinic, (string) $request->query('offer'));
+        if ($offerRecipient?->campaign?->service) {
+            $selectedService = $offerRecipient->campaign->service;
+            $offerRecipient->update(['opened_at' => $offerRecipient->opened_at ?: now()]);
+        }
+        if ($selectedService) {
+            $stylists = $stylists->filter(fn (Stylist $stylist) => $stylist->canPerformService($selectedService->id))->values();
+        }
         $selectedStylist = $this->selectedStylist($clinic, $request);
+        if ($selectedStylist && ! $selectedStylist->canPerformService($selectedService?->id)) {
+            $selectedStylist = null;
+        }
         $timezone = $clinic->localTimezone();
         $selectedDate = $request->query('date')
             ? Carbon::parse((string) $request->query('date'), $timezone)
             : now($timezone);
+        $offerExpiresAt = $offerRecipient?->campaign?->expires_at?->copy()->timezone($timezone);
+        $lastDateOffset = (int) ($offerExpiresAt
+            ? max(0, min(13, now($timezone)->startOfDay()->diffInDays($offerExpiresAt->copy()->startOfDay(), false)))
+            : 13);
 
         return view('public.bookings.create', [
             'clinic' => $clinic,
@@ -78,9 +95,10 @@ class PublicBookingController extends Controller
             'selectedService' => $selectedService,
             'selectedStylist' => $selectedStylist,
             'selectedDate' => $selectedDate,
-            'availableSlots' => $this->availableSlots($clinic, $selectedDate, $selectedService, $selectedStylist),
+            'availableSlots' => $this->availableSlots($clinic, $selectedDate, $selectedService, $selectedStylist, $offerExpiresAt),
             'googleCalendarError' => $googleCalendarError,
-            'dates' => collect(range(0, 13))->map(fn (int $day) => now($timezone)->addDays($day)),
+            'dates' => collect(range(0, $lastDateOffset))->map(fn (int $day) => now($timezone)->addDays($day)),
+            'offerRecipient' => $offerRecipient,
         ]);
     }
 
@@ -99,32 +117,60 @@ class PublicBookingController extends Controller
             'phone' => ['required', 'string', 'max:40'],
             'email' => ['nullable', 'email', 'max:255'],
             'client_comments' => ['nullable', 'string', 'max:1000'],
+            'offer_token' => ['nullable', 'uuid'],
+            'marketing_email_consent' => ['nullable', 'boolean'],
+            'marketing_sms_consent' => ['nullable', 'boolean'],
+            'addon_ids' => ['nullable', 'array'],
+            'addon_ids.*' => ['integer', 'distinct'],
         ]);
+
+        $offerRecipient = $this->offerRecipient($clinic, (string) ($data['offer_token'] ?? ''));
+        if ($offerRecipient?->campaign?->service_id) {
+            $data['service_id'] = $offerRecipient->campaign->service_id;
+        }
 
         $service = ! empty($data['service_id'])
             ? Service::query()->where('clinic_id', $clinic->id)->where('is_active', true)->findOrFail($data['service_id'])
             : null;
+        $selectedAddons = $service
+            ? $service->activeAddons()->whereIn('id', $data['addon_ids'] ?? [])->get()
+            : collect();
+        abort_unless($selectedAddons->count() === count($data['addon_ids'] ?? []), 422, 'Uno de los extras elegidos no esta disponible.');
         $stylist = ! empty($data['stylist_id'])
             ? Stylist::query()->where('clinic_id', $clinic->id)->where('is_active', true)->where('is_internal', false)->findOrFail($data['stylist_id'])
             : null;
 
         $startsAt = Carbon::parse($data['starts_at'], $clinic->localTimezone());
 
+        abort_if(
+            $offerRecipient && $startsAt->greaterThan($offerRecipient->campaign->expires_at->copy()->timezone($clinic->localTimezone())),
+            422,
+            'La fecha elegida queda fuera de la vigencia de la oferta.'
+        );
+
         $availableStylist = $this->availableStylistForSlot($clinic, $startsAt, $service, $stylist);
 
         abort_unless($availableStylist !== null, 409);
+
+        $clientValues = [
+            'first_name' => $data['first_name'],
+            'last_name' => $data['last_name'] ?? null,
+            'email' => $data['email'] ?? null,
+            'notification_preference' => 'both',
+        ];
+        if ($request->boolean('marketing_email_consent')) {
+            $clientValues['marketing_email_consent_at'] = now();
+        }
+        if ($request->boolean('marketing_sms_consent')) {
+            $clientValues['marketing_sms_consent_at'] = now();
+        }
 
         $client = Client::query()->updateOrCreate(
             [
                 'clinic_id' => $clinic->id,
                 'phone' => $data['phone'],
             ],
-            [
-                'first_name' => $data['first_name'],
-                'last_name' => $data['last_name'] ?? null,
-                'email' => $data['email'] ?? null,
-                'notification_preference' => 'both',
-            ]
+            $clientValues
         );
 
         $durationMinutes = $service?->duration_minutes ?? 60;
@@ -139,6 +185,15 @@ class PublicBookingController extends Controller
             'source' => 'public_booking',
             'reason' => $service?->name ?? 'Reserva publica',
             'client_comments' => $data['client_comments'] ?? null,
+            'flash_campaign_recipient_id' => $offerRecipient?->id,
+            'campaign_discount_percent' => $offerRecipient?->campaign?->discount_percent,
+            'campaign_price_cents' => $offerRecipient?->campaign?->discounted_price_cents,
+            'selected_addons' => $selectedAddons->map(fn ($addon) => [
+                'id' => $addon->id,
+                'name' => $addon->name,
+                'price_cents' => $addon->price_cents,
+            ])->values()->all(),
+            'addons_total_cents' => $selectedAddons->sum('price_cents'),
         ]);
 
         return redirect("/salones/{$clinic->id}/reservar")
@@ -159,6 +214,23 @@ class PublicBookingController extends Controller
             ->find($serviceId) ?: $fallback;
     }
 
+    private function offerRecipient(Clinic $clinic, string $token): ?FlashCampaignRecipient
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        return FlashCampaignRecipient::query()
+            ->where('token', $token)
+            ->whereHas('campaign', fn ($campaign) => $campaign
+                ->where('clinic_id', $clinic->id)
+                ->where('status', 'active')
+                ->whereNull('ended_at')
+                ->where('expires_at', '>', now()))
+            ->with(['campaign.service', 'client'])
+            ->first();
+    }
+
     private function selectedStylist(Clinic $clinic, Request $request): ?Stylist
     {
         $stylistId = (int) $request->query('stylist_id');
@@ -174,7 +246,7 @@ class PublicBookingController extends Controller
             ->find($stylistId);
     }
 
-    private function availableSlots(Clinic $clinic, Carbon $date, ?Service $service, ?Stylist $stylist): \Illuminate\Support\Collection
+    private function availableSlots(Clinic $clinic, Carbon $date, ?Service $service, ?Stylist $stylist, ?Carbon $offerExpiresAt = null): \Illuminate\Support\Collection
     {
         $timezone = $clinic->localTimezone();
         $workingStylists = $this->eligibleStylists($clinic, $service, $stylist)
@@ -200,6 +272,7 @@ class PublicBookingController extends Controller
         return collect(range(0, $steps))
             ->map(fn (int $step) => $start->copy()->addMinutes($step * 30))
             ->filter(fn (Carbon $slot) => $slot->lessThan($end) && $slot->greaterThanOrEqualTo(now($timezone)))
+            ->when($offerExpiresAt, fn ($slots) => $slots->filter(fn (Carbon $slot) => $slot->lessThanOrEqualTo($offerExpiresAt)))
             ->filter(fn (Carbon $slot) => $this->availableStylistForSlot($clinic, $slot, $service, $stylist) !== null)
             ->values();
     }
@@ -230,6 +303,14 @@ class PublicBookingController extends Controller
             return false;
         }
 
+        if ($stylist->isOnBreak($startsAt, $endsAt)) {
+            return false;
+        }
+
+        if (! $this->resources->available($service, $startsAt, $endsAt)) {
+            return false;
+        }
+
         return Appointment::query()
             ->with('service')
             ->where('clinic_id', $clinic->id)
@@ -253,22 +334,24 @@ class PublicBookingController extends Controller
     private function eligibleStylists(Clinic $clinic, ?Service $service, ?Stylist $stylist): \Illuminate\Support\Collection
     {
         if ($stylist) {
-            return collect([$stylist]);
+            return $stylist->canPerformService($service?->id) ? collect([$stylist]) : collect();
         }
 
         return Stylist::query()
             ->where('clinic_id', $clinic->id)
             ->where('is_active', true)
             ->where('is_internal', false)
+            ->when($service, fn ($query) => $query->where(function ($services) use ($service): void {
+                $services->where('service_id', $service->id)
+                    ->orWhereHas('services', fn ($assigned) => $assigned->whereKey($service->id));
+            }))
             ->orderBy('name')
             ->get();
     }
 
     private function stylistWorksOnDate(Stylist $stylist, Carbon $date): bool
     {
-        $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-
-        return in_array(strtolower($date->englishDayOfWeek), $workDays, true);
+        return $stylist->worksOnDate($date);
     }
 
     private function stylistOnVacation(Stylist $stylist, Carbon $date): bool
@@ -281,14 +364,14 @@ class PublicBookingController extends Controller
 
     private function workStartFor(Stylist $stylist, Carbon $date, string $timezone): Carbon
     {
-        [$hour, $minute] = $this->timeParts($stylist->work_starts_at ?: '09:00');
+        [$hour, $minute] = $this->timeParts($stylist->scheduleForDate($date)['start'] ?? '09:00');
 
         return $date->copy()->timezone($timezone)->setTime($hour, $minute);
     }
 
     private function workEndFor(Stylist $stylist, Carbon $date, string $timezone): Carbon
     {
-        [$hour, $minute] = $this->timeParts($stylist->work_ends_at ?: '17:00');
+        [$hour, $minute] = $this->timeParts($stylist->scheduleForDate($date)['end'] ?? '17:00');
 
         return $date->copy()->timezone($timezone)->setTime($hour, $minute);
     }

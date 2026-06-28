@@ -7,6 +7,7 @@ use App\Services\AppointmentService;
 use App\Services\AppointmentReminderCallService;
 use App\Services\ClinicResolver;
 use App\Services\StylistScheduleService;
+use App\Services\ResourceAvailabilityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -117,12 +118,12 @@ class AppointmentController extends Controller
         return view('appointments.edit', [
             'appointment' => $appointment->load(['client', 'service', 'stylist']),
             'services' => $clinic->services()->where('is_active', true)->orderBy('name')->get(),
-            'stylists' => $clinic->stylists()->where('is_active', true)->orderBy('name')->get(),
+            'stylists' => $clinic->stylists()->with('services')->where('is_active', true)->orderBy('name')->get(),
             'timezone' => $timezone,
         ]);
     }
 
-    public function update(Request $request, Appointment $appointment, AppointmentService $appointments, StylistScheduleService $schedules): RedirectResponse
+    public function update(Request $request, Appointment $appointment, AppointmentService $appointments, StylistScheduleService $schedules, ResourceAvailabilityService $resources): RedirectResponse
     {
         $clinic = $this->appointmentClinic($request, $appointment);
 
@@ -144,8 +145,17 @@ class AppointmentController extends Controller
             ? $clinic->stylists()->whereKey($data['stylist_id'])->firstOrFail()
             : null;
 
+        if ($stylist && ! empty($data['service_id']) && ! $stylist->canPerformService((int) $data['service_id'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['stylist_id' => 'Este empleado no tiene asociado el servicio seleccionado.']);
+        }
+
         if ($stylist && ($scheduleError = $schedules->validationMessage($stylist, $startsAt, $endsAt))) {
             throw \Illuminate\Validation\ValidationException::withMessages(['starts_at' => $scheduleError]);
+        }
+
+        $service = ! empty($data['service_id']) ? $clinic->services()->find($data['service_id']) : null;
+        if ($resourceError = $resources->validationMessage($service, $startsAt, $endsAt, $appointment->id)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['starts_at' => $resourceError]);
         }
 
         try {

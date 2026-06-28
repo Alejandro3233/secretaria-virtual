@@ -61,7 +61,7 @@
     .history-card { margin-top:16px; }
     .history-tabs { display:flex; gap:8px; margin-bottom:14px; }
     .history-tabs a { padding:7px 12px; border-radius:999px; background:#f4edf1; color:var(--muted); font-size:12px; font-weight:900; }
-    .history-tabs a.active { background:var(--brand); color:white; }
+    .history-tabs a.active { background:#111827; color:white; }
     .visit-row { display:grid; grid-template-columns:125px minmax(0,1fr) auto; gap:14px; align-items:center; padding:13px 0; border-top:1px solid #f2eaf0; }
     .visit-date b, .visit-date span, .visit-main b, .visit-main span { display:block; }
     .visit-date span, .visit-main span { margin-top:3px; color:var(--muted); font-size:12px; }

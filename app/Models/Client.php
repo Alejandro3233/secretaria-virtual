@@ -17,6 +17,8 @@ class Client extends Model
         'email',
         'address',
         'notification_preference',
+        'marketing_email_consent_at',
+        'marketing_sms_consent_at',
         'loyalty_level',
         'notes',
     ];
@@ -25,6 +27,8 @@ class Client extends Model
     {
         return [
             'loyalty_level' => 'integer',
+            'marketing_email_consent_at' => 'datetime',
+            'marketing_sms_consent_at' => 'datetime',
         ];
     }
 
@@ -41,6 +45,11 @@ class Client extends Model
     public function appointments(): HasMany
     {
         return $this->hasMany(Appointment::class);
+    }
+
+    public function flashCampaignRecipients(): HasMany
+    {
+        return $this->hasMany(FlashCampaignRecipient::class);
     }
 
     public function initials(): string

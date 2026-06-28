@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Http;
 
 class TwilioSmsService
 {
-    public function send(string $to, string $body): ?string
+    public function send(string $to, string $body, ?string $statusCallback = null): ?string
     {
         $accountSid = config('services.twilio.account_sid');
         $authToken = config('services.twilio.auth_token');
@@ -22,6 +22,10 @@ class TwilioSmsService
             'To' => $to,
             'Body' => $body,
         ];
+
+        if ($statusCallback) {
+            $payload['StatusCallback'] = $statusCallback;
+        }
 
         if ($messagingServiceSid) {
             $payload['MessagingServiceSid'] = $messagingServiceSid;

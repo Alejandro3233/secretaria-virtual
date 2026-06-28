@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <title>@yield('title', 'Reservar cita - Secretary365')</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +19,7 @@
         .brand-logo { width: 170px; max-width: 100%; display: block; border-radius: 8px; }
         .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .btn { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #dde3ea; border-radius: 6px; padding: 0 16px; background: white; font-weight: 900; cursor: pointer; }
-        .btn.primary { background: #c0265a; color: white; border-color: #c0265a; }
+        .btn.primary { background: #111827; color: white; border-color: #111827; }
         .hero { padding: 46px 0 30px; }
         .hero h1 { margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; }
         .hero p { max-width: 680px; color: #647084; font-size: 18px; line-height: 1.55; }
@@ -41,7 +41,7 @@
         .slot { position: relative; }
         .slot input { position: absolute; opacity: 0; pointer-events: none; }
         .slot span { min-height: 42px; display: grid; place-items: center; border: 1px solid #dde3ea; border-radius: 6px; background: white; font-weight: 900; cursor: pointer; }
-        .slot input:checked + span { background: #c0265a; border-color: #c0265a; color: white; }
+        .slot input:checked + span { background: #111827; border-color: #111827; color: white; }
         section { margin-bottom: 18px; }
         @yield('page-styles')
         @media (max-width: 760px) {

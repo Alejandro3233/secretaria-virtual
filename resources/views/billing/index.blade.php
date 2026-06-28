@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Facturacion - Secretaria Virtual')
+@section('title', 'Facturacion - Secretary365')
 @section('page_title', 'Facturacion')
 @section('page_subtitle', 'Consulta pagos, facturas y documentos emitidos por Stripe.')
 @section('page_actions')

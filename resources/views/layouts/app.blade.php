@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Secretaria Virtual')</title>
+    <title>@yield('title', 'Secretary365')</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -72,31 +72,51 @@
             gap: 7px;
             margin-left: 4px;
             min-width: 0;
-            color: white;
+            color: #eadfe5;
         }
-        .brand-logo {
+        .app-launcher {
             width: 30px;
             height: 30px;
             flex: 0 0 30px;
-            object-fit: contain;
-            display: block;
+            display: grid;
+            grid-template-columns: repeat(3, 4px);
+            grid-template-rows: repeat(3, 4px);
+            place-content: center;
+            gap: 3px;
+            border-radius: 6px;
+            transition: background .16s ease;
         }
-        .brand-wordmark {
-            width: 115px;
-            height: 34px;
-            flex: 0 0 115px;
-            display: block;
-            object-fit: cover;
-            object-position: center;
-            filter: grayscale(1) contrast(8) brightness(3);
-            mix-blend-mode: screen;
+        .brand:hover .app-launcher { background: rgba(255,255,255,.1); }
+        .app-launcher span {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: launcherDotWave .72s ease-in-out 1 both;
+        }
+        .app-launcher span:nth-child(1) { animation-delay: .04s; }
+        .app-launcher span:nth-child(2) { animation-delay: .09s; }
+        .app-launcher span:nth-child(3) { animation-delay: .14s; }
+        .app-launcher span:nth-child(4) { animation-delay: .09s; }
+        .app-launcher span:nth-child(5) { animation-delay: .14s; }
+        .app-launcher span:nth-child(6) { animation-delay: .19s; }
+        .app-launcher span:nth-child(7) { animation-delay: .14s; }
+        .app-launcher span:nth-child(8) { animation-delay: .19s; }
+        .app-launcher span:nth-child(9) { animation-delay: .24s; }
+        @keyframes launcherDotWave {
+            0%, 100% { transform: translateY(0); }
+            32% { transform: translateY(-4px); }
+            68% { transform: translateY(3px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .app-launcher span { animation: none; }
         }
         .brand-text {
             overflow: hidden;
-            color: white;
-            font-size: 16px;
-            font-weight: 900;
-            letter-spacing: -.02em;
+            color: #eadfe5;
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 0;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -172,7 +192,7 @@
             min-height: 36px;
             border: 0;
             border-radius: 6px;
-            background: var(--brand);
+            background: #111827;
             color: white;
             font-weight: 900;
             cursor: pointer;
@@ -198,8 +218,7 @@
         html.sidebar-collapsed .sidebar { padding: 16px 10px; align-items: center; }
         html.sidebar-collapsed .sidebar-top { width: 100%; justify-content: center; }
         html.sidebar-collapsed .brand { justify-content: center; margin-left: 0; }
-        html.sidebar-collapsed .brand-logo { width: 38px; height: 38px; flex-basis: 38px; display: block; }
-        html.sidebar-collapsed .brand-wordmark { display: none; }
+        html.sidebar-collapsed .app-launcher { width: 38px; height: 38px; flex-basis: 38px; }
         html.sidebar-collapsed .brand-text,
         html.sidebar-collapsed .nav-label,
         html.sidebar-collapsed .nav-sub,
@@ -344,7 +363,8 @@
             background: white;
             font-weight: 800;
         }
-        .btn.primary { background: var(--brand); color: white; border-color: var(--brand); }
+        .btn.primary { background: #111827; color: white; border-color: #111827; }
+        .btn.primary:hover { background: #000; border-color: #000; }
         .content { padding: 18px 22px 36px; }
         .card {
             background: white;
@@ -439,7 +459,7 @@
         .calendar-view-tabs { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fffafd; }
         .calendar-view-tabs a { min-width: 62px; padding: 7px 10px; border-right: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 900; text-align: center; }
         .calendar-view-tabs a:last-child { border-right: 0; }
-        .calendar-view-tabs .active { background: var(--brand); color: white; }
+        .calendar-view-tabs .active { background: #111827; color: white; }
         .calendar-empty { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); background: #f8fbff; }
         .calendar-empty b, .calendar-empty span { display: block; }
         .calendar-empty span { margin-top: 2px; color: var(--muted); font-size: 13px; }
@@ -573,8 +593,12 @@
     <aside class="sidebar">
         <div class="sidebar-top">
             <a class="brand" href="/consola" title="Secretary365">
-                <img class="brand-logo" src="/favicon.png" alt="">
-                <img class="brand-wordmark" src="/logo-login-v2.png" alt="Secretary365">
+                <span class="app-launcher" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                    <span></span><span></span><span></span>
+                    <span></span><span></span><span></span>
+                </span>
+                <span class="brand-text">Secretary 365</span>
             </a>
             <button class="sidebar-toggle" type="button" aria-label="Cerrar menu" aria-expanded="true" title="Abrir o cerrar menu">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M10 5v14"/></svg>
@@ -593,6 +617,10 @@
             <a class="{{ request()->is('clientes*') ? 'active' : '' }}" href="/clientes" title="Clientes">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
                 <span class="nav-label">Clientes</span>
+            </a>
+            <a class="{{ request()->is('campanas*') ? 'active' : '' }}" href="/campanas" title="Campañas">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6a8 8 0 0 1 0 12"/></svg>
+                <span class="nav-label">Campañas</span>
             </a>
             <a class="{{ request()->is('personal') ? 'active' : '' }}" href="/personal" title="Personal">
                 <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -631,11 +659,6 @@
                 </a>
             @endif
         </nav>
-
-        <form method="POST" action="/logout">
-            @csrf
-            <button class="logout" type="submit" title="Cerrar sesion"><span class="logout-label">Cerrar sesion</span></button>
-        </form>
 
         @php
             $sidebarClinic = auth()->user()?->primaryClinic();

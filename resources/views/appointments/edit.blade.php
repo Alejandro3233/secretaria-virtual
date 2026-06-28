@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Editar cita - Secretaria Virtual')
+@section('title', 'Editar cita - Secretary365')
 @section('page_title', 'Editar cita')
 @section('page_subtitle', 'Cambia la fecha, hora o detalles de la cita. Si Google Calendar esta conectado, se actualiza automaticamente.')
 @section('page_actions')
@@ -72,7 +72,7 @@
                 <select id="stylist_id" name="stylist_id">
                     <option value="">Sin asignar</option>
                     @foreach ($stylists as $stylist)
-                        <option value="{{ $stylist->id }}" @selected(old('stylist_id', $appointment->stylist_id) == $stylist->id)>
+                        <option value="{{ $stylist->id }}" data-service-ids="{{ $stylist->services->pluck('id')->push($stylist->service_id)->filter()->unique()->implode(',') }}" @selected(old('stylist_id', $appointment->stylist_id) == $stylist->id)>
                             {{ $stylist->name }}{{ $stylist->specialty ? ' - '.$stylist->specialty : '' }}
                         </option>
                     @endforeach
@@ -141,6 +141,20 @@
         const serviceSelect = document.getElementById('service_id');
         const durationInput = document.getElementById('duration_minutes');
         const reasonInput = document.getElementById('reason');
+        const stylistSelect = document.getElementById('stylist_id');
+
+        const filterStylistsByService = () => {
+            const serviceId = serviceSelect.value;
+            [...stylistSelect.options].forEach((option, index) => {
+                if (index === 0) return;
+                const allowed = (option.dataset.serviceIds || '').split(',').filter(Boolean);
+                option.hidden = !!serviceId && !allowed.includes(serviceId);
+                option.disabled = option.hidden;
+            });
+            if (stylistSelect.selectedOptions[0]?.disabled) stylistSelect.value = '';
+        };
+        serviceSelect.addEventListener('change', filterStylistsByService);
+        filterStylistsByService();
 
         serviceSelect?.addEventListener('change', () => {
             const option = serviceSelect.options[serviceSelect.selectedIndex];

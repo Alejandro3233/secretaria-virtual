@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Consola - Secretaria Virtual')
+@section('title', 'Consola - Secretary365')
 @section('page_title', 'Consola principal')
 @section('page_subtitle', auth()->user()->name.' - '.($clinic?->name ?? 'Salon sin configurar'))
 @section('page_actions')
@@ -254,7 +254,7 @@
         .hot-call-button:disabled { cursor: wait; opacity: .5; }
         .hot-call-button.answer { background: #15803d; }
         .hot-call-button.end { background: #b91c1c; }
-        .hot-call-button.assistant { background: var(--brand); }
+        .hot-call-button.assistant { background: #111827; }
         @keyframes hotCallRing { 0%, 100% { transform: rotate(-5deg) scale(.96); } 50% { transform: rotate(5deg) scale(1.06); } }
 
         .live-call-panel {

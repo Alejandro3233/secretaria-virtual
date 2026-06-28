@@ -62,6 +62,9 @@ Route::get('/personal/servicios', [ServiceController::class, 'index'])->middlewa
 Route::post('/personal/servicios', [ServiceController::class, 'store'])->middleware('auth');
 Route::post('/personal/servicios/catalogo-base', [ServiceController::class, 'seedTemplates'])->middleware('auth');
 Route::put('/personal/servicios/{service}', [ServiceController::class, 'update'])->middleware('auth');
+Route::post('/personal/servicios/{service}/extras', [ServiceController::class, 'storeAddon'])->middleware('auth');
+Route::put('/personal/servicios/{service}/extras/{addon}', [ServiceController::class, 'updateAddon'])->middleware('auth');
+Route::delete('/personal/servicios/{service}/extras/{addon}', [ServiceController::class, 'destroyAddon'])->middleware('auth');
 
 Route::get('/agenda', [ScheduleController::class, 'index'])->middleware('auth');
 Route::get('/agenda/nueva-cita', [ScheduleController::class, 'create'])->middleware('auth');

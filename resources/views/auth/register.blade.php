@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <title>Crear cuenta - Secretaria Virtual</title>
+    <title>Crear cuenta - Secretary365</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -14,7 +14,7 @@
         body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: .9fr 1.1fr; font-family: Roboto, Arial, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif; color: #10131a; background: #f6f8fb; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         .intro { background: #111827; color: white; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; }
         .brand { display: flex; align-items: center; gap: 0; font-size: 22px; font-weight: 900; text-decoration: none; color: white; }
-        .brand-logo { width: 190px; max-width: 100%; height: auto; display: block; border-radius: 8px; }
+        .brand-logo { width: 230px; max-width: 100%; height: 56px; display: block; object-fit: cover; object-position: center; mix-blend-mode: lighten; }
         .mark { width: 36px; height: 36px; border-radius: 8px; background: #ef3340; display: grid; place-items: center; }
         .intro h1 { font-size: clamp(34px, 5vw, 60px); line-height: 1; letter-spacing: 0; margin: 0; }
         .intro p { color: #cbd5e1; font-size: 18px; line-height: 1.55; max-width: 560px; }
@@ -25,7 +25,7 @@
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         label { display: block; font-weight: 800; margin: 14px 0 7px; }
         input, select { width: 100%; min-height: 44px; border: 1px solid #ccd5e0; border-radius: 6px; padding: 0 12px; background: white; }
-        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #ef3340; color: white; font-weight: 900; cursor: pointer; margin-top: 22px; }
+        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #111827; color: white; font-weight: 900; cursor: pointer; margin-top: 22px; }
         .link { color: #b91c2a; font-weight: 800; text-decoration: none; }
         .footer { margin-top: 18px; color: #647084; text-align: center; }
         .error { margin-top: 8px; color: #b91c2a; font-size: 14px; }
@@ -38,7 +38,7 @@
 </head>
 <body>
     <aside class="intro">
-        <a class="brand" href="/"><img class="brand-logo" src="/logo_blanco.png" alt="Secretaria Virtual"></a>
+        <a class="brand" href="/"><img class="brand-logo" src="/logo-login-v2.png" alt="Secretary365"></a>
         <div>
             <h1>Crea la cuenta de tu salon</h1>
             <p>El registro crea tu usuario administrador, un salon inicial y activa el plan Profesional en modo prueba.</p>

@@ -1,22 +1,33 @@
 @extends('layouts.app')
 
-@section('title', 'Agenda - Secretaria Virtual')
+@section('title', 'Agenda - Secretary365')
 @section('page_title', 'Agenda')
-@section('page_subtitle', $clinic?->google_connected_at ? 'Agenda sincronizada con Google Calendar y guardada en Secretaria Virtual.' : 'Conecta Google Calendar para importar y sincronizar citas automaticamente.')
+@section('page_subtitle', 'Consulta y organiza las citas del salon.')
 @section('page_actions')
     <a class="btn" href="/citas">Lista de citas</a>
-    @if ($clinic?->google_connected_at)
-        <form method="POST" action="/google-calendar/sync">
-            @csrf
-            <button class="btn" type="submit">Sincronizar Google</button>
-        </form>
-    @else
-        <a class="btn" href="/google-calendar/connect">Conectar Google Calendar</a>
-    @endif
+    <span class="calendar-connection-status {{ $clinic?->google_connected_at ? 'is-connected' : 'is-disconnected' }}" role="status" tabindex="0" aria-label="Google Calendar {{ $clinic?->google_connected_at ? 'conectado' : 'sin conectar' }}">
+        <span class="calendar-connection-dot" aria-hidden="true"></span>
+        Google Calendar
+        <span class="calendar-connection-help" role="tooltip">
+            @if ($clinic?->google_connected_at)
+                Tu agenda ya esta conectada. Para revisar o cambiar la conexion, abre <b>Ajustes</b> y entra en la seccion <b>Google Calendar</b>.
+            @else
+                &iquest;Quieres conectar tu agenda? Abre <b>Ajustes</b> en el menu lateral, busca la seccion <b>Google Calendar</b> y sigue los pasos que aparecen en pantalla.
+            @endif
+        </span>
+    </span>
 @endsection
 
 @section('content')
     <style>
+        .calendar-connection-status { position: relative; min-height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; cursor: help; }
+        .calendar-connection-status:focus-visible { outline: 3px solid rgba(29,78,216,.22); outline-offset: 2px; }
+        .calendar-connection-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #dc2626; box-shadow: 0 0 0 3px #fee2e2; }
+        .calendar-connection-status.is-connected .calendar-connection-dot { background: #16a34a; box-shadow: 0 0 0 3px #dcfce7; }
+        .calendar-connection-help { position: absolute; z-index: 30; top: calc(100% + 10px); right: 0; width: min(310px, calc(100vw - 32px)); padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); box-shadow: 0 12px 32px rgba(36,21,29,.14); font-size: 13px; font-weight: 400; line-height: 1.45; white-space: normal; opacity: 0; visibility: hidden; transform: translateY(-4px); pointer-events: none; transition: opacity .15s ease, transform .15s ease, visibility .15s ease; }
+        .calendar-connection-help::before { content: ""; position: absolute; right: 18px; bottom: 100%; border: 6px solid transparent; border-bottom-color: #fff; filter: drop-shadow(0 -1px 0 var(--line)); }
+        .calendar-connection-status:hover .calendar-connection-help,
+        .calendar-connection-status:focus .calendar-connection-help { opacity: 1; visibility: visible; transform: translateY(0); }
         .move-confirmation[hidden] { display: none; }
         .move-confirmation { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: rgba(24,18,22,.62); }
         .move-confirmation-card { width: min(430px, 100%); border-radius: 10px; padding: 28px; background: white; box-shadow: 0 24px 70px rgba(0,0,0,.28); text-align: center; }
@@ -25,6 +36,12 @@
         .move-confirmation-actions { display: grid; gap: 10px; }
         .move-confirmation-actions .btn { min-height: 44px; }
         .calendar-nonworking-hours { position: absolute; left: 0; right: 0; z-index: 0; background: #e5e7eb; pointer-events: none; }
+        .calendar-vacation-hours { position:absolute;inset:0;z-index:1;display:flex;align-items:flex-start;justify-content:center;padding-top:18px;background:rgba(209,213,219,.88);color:#4b5563;font-size:12px;font-weight:900;letter-spacing:.02em;pointer-events:none; }
+        .calendar-day-column.is-vacation { cursor:not-allowed; }
+        .calendar-break-hours { position:absolute;left:0;right:0;z-index:1;display:flex;align-items:center;justify-content:center;border-top:1px dashed #9ca3af;border-bottom:1px dashed #9ca3af;background:repeating-linear-gradient(135deg,#e5e7eb,#e5e7eb 8px,#f3f4f6 8px,#f3f4f6 16px);color:#4b5563;font-size:11px;font-weight:900;pointer-events:none; }
+        .calendar-stylist-avatar { width:34px;height:34px;display:grid;place-items:center;overflow:hidden;margin:auto;border-radius:50%;background:#f3e8ee;color:var(--brand);font-size:11px;font-weight:900;box-shadow:0 0 0 2px #fff,0 0 0 3px var(--line); }
+        .calendar-stylist-avatar img { width:100%;height:100%;object-fit:cover; }
+        .calendar-day-head .calendar-stylist-name { margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:12px;font-weight:900; }
     </style>
     @php
         $calendarStartHour = collect($hours)->min() ?? 9;
@@ -60,18 +77,6 @@
         <div class="card" style="margin-bottom:18px;border-color:#fecaca;background:#fef2f2;color:#991b1b;font-weight:800;">
             No se pudo sincronizar Google Calendar automaticamente: {{ $googleCalendarError }}
         </div>
-    @endif
-
-    @if (! $clinic?->google_connected_at)
-        <section class="card" style="margin-bottom:18px;">
-            <div class="section-title">
-                <div>
-                    <h2>Conecta Google Calendar para activar la agenda real</h2>
-                    <span class="subtitle">Cuando el salon o su sistema externo cree citas en Google Calendar, Secretaria Virtual las importara a la base local para poder atender llamadas, confirmar, cambiar o cancelar.</span>
-                </div>
-                <a class="btn primary" href="/google-calendar/connect">Conectar ahora</a>
-            </div>
-        </section>
     @endif
 
     <div class="google-calendar-layout">
@@ -163,9 +168,8 @@
                                 $stylistDisplayName = $stylist->is_internal && ! $clinic->google_connected_at ? 'Google (desconectado)' : $stylist->name;
                             @endphp
                             <div class="calendar-day-head">
-                                <span>Estilista</span>
-                                <b title="{{ $stylistDisplayName }}">{{ substr($stylist->name, 0, 1) }}</b>
-                                <small>{{ $stylistDisplayName }}</small>
+                                <span class="calendar-stylist-avatar" title="{{ $stylistDisplayName }}">@if($stylist->avatarUrl())<img src="{{ $stylist->avatarUrl() }}" alt="Foto de {{ $stylistDisplayName }}">@else{{ $stylist->initials() }}@endif</span>
+                                <small class="calendar-stylist-name">{{ $stylistDisplayName }}</small>
                             </div>
                         @empty
                             <div class="calendar-day-head">
@@ -185,27 +189,41 @@
                         @forelse ($visibleStylists as $stylist)
                             @php
                                 $stylistAppointments = $appointments->filter(fn ($appointment) => $appointment->stylist_id === $stylist->id);
-                                $stylistWorkDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-                                $stylistWorksToday = in_array(strtolower($selectedDate->englishDayOfWeek), $stylistWorkDays, true);
-                                [$workStartHour, $workStartMinute] = array_pad(array_map('intval', explode(':', $stylist->work_starts_at ?: '08:00')), 2, 0);
-                                [$workEndHour, $workEndMinute] = array_pad(array_map('intval', explode(':', $stylist->work_ends_at ?: '21:00')), 2, 0);
+                                $stylistVacation = $stylist->vacations->first(fn ($vacation) =>
+                                    $vacation->starts_on->startOfDay()->lte($selectedDate->copy()->endOfDay())
+                                    && $vacation->ends_on->endOfDay()->gte($selectedDate->copy()->startOfDay())
+                                );
+                                $stylistDaySchedule = $stylist->scheduleForDate($selectedDate);
+                                $stylistWorksToday = $stylistDaySchedule !== null;
+                                [$workStartHour, $workStartMinute] = array_pad(array_map('intval', explode(':', $stylistDaySchedule['start'] ?? '08:00')), 2, 0);
+                                [$workEndHour, $workEndMinute] = array_pad(array_map('intval', explode(':', $stylistDaySchedule['end'] ?? '21:00')), 2, 0);
                                 $calendarStartMinutes = $calendarStartHour * 60;
                                 $calendarEndMinutes = $calendarEndHour * 60;
                                 $workStartMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($workStartHour * 60) + $workStartMinute));
                                 $workEndMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($workEndHour * 60) + $workEndMinute));
                                 $beforeWorkHeight = (($workStartMinutes - $calendarStartMinutes) / 60) * $hourHeight;
                                 $afterWorkTop = (($workEndMinutes - $calendarStartMinutes) / 60) * $hourHeight;
+                                $breakStartMinutes = $breakEndMinutes = null;
+                                if ($stylistWorksToday && !empty($stylistDaySchedule['break_start']) && !empty($stylistDaySchedule['break_end'])) {
+                                    [$breakStartHour, $breakStartMinute] = array_pad(array_map('intval', explode(':', $stylistDaySchedule['break_start'])), 2, 0);
+                                    [$breakEndHour, $breakEndMinute] = array_pad(array_map('intval', explode(':', $stylistDaySchedule['break_end'])), 2, 0);
+                                    $breakStartMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($breakStartHour * 60) + $breakStartMinute));
+                                    $breakEndMinutes = max($calendarStartMinutes, min($calendarEndMinutes, ($breakEndHour * 60) + $breakEndMinute));
+                                }
                             @endphp
                             <div
-                                class="calendar-day-column"
+                                class="calendar-day-column {{ $stylistVacation ? 'is-vacation' : '' }}"
                                 data-drop-column="day"
+                                @if ($stylistVacation) data-unavailable="vacation" @endif
                                 data-date="{{ $selectedDate->format('Y-m-d') }}"
                                 data-stylist-id="{{ $stylist->id }}"
                                 data-start-hour="{{ $calendarStartHour }}"
                                 data-hour-height="{{ $hourHeight }}"
                                 style="height: {{ $calendarHeight }}px;"
                             >
-                                @if (! $stylistWorksToday)
+                                @if ($stylistVacation)
+                                    <div class="calendar-vacation-hours" title="{{ $stylistVacation->reason ?: 'Vacaciones' }}">Vacaciones</div>
+                                @elseif (! $stylistWorksToday)
                                     <div class="calendar-nonworking-hours" style="top:0;height:{{ $calendarHeight }}px;"></div>
                                 @else
                                     @if ($beforeWorkHeight > 0)
@@ -213,6 +231,11 @@
                                     @endif
                                     @if ($afterWorkTop < $calendarHeight)
                                         <div class="calendar-nonworking-hours" style="top:{{ $afterWorkTop }}px;height:{{ $calendarHeight - $afterWorkTop }}px;"></div>
+                                    @endif
+                                    @if ($breakStartMinutes !== null && $breakEndMinutes > $breakStartMinutes)
+                                        <div class="calendar-break-hours" style="top:{{ (($breakStartMinutes - $calendarStartMinutes) / 60) * $hourHeight }}px;height:{{ (($breakEndMinutes - $breakStartMinutes) / 60) * $hourHeight }}px;">
+                                            Descanso {{ \Illuminate\Support\Carbon::createFromTime(intdiv($breakStartMinutes,60),$breakStartMinutes%60)->format('g:i A') }}–{{ \Illuminate\Support\Carbon::createFromTime(intdiv($breakEndMinutes,60),$breakEndMinutes%60)->format('g:i A') }}
+                                        </div>
                                     @endif
                                 @endif
                                 @for ($hour = $calendarStartHour; $hour < $calendarEndHour; $hour++)
@@ -492,6 +515,12 @@
                             return;
                         }
 
+                        if (column.dataset.unavailable === 'vacation') {
+                            dragEvent.dataTransfer.dropEffect = 'none';
+                            hidePreview();
+                            return;
+                        }
+
                         dragEvent.preventDefault();
                         dragEvent.dataTransfer.dropEffect = 'move';
                         column.classList.add('is-drag-over');
@@ -507,6 +536,13 @@
 
                     column.addEventListener('drop', async (dropEvent) => {
                         if (! draggedEvent) {
+                            return;
+                        }
+
+                        if (column.dataset.unavailable === 'vacation') {
+                            dropEvent.preventDefault();
+                            showStatus('Este empleado esta de vacaciones ese dia.', 'danger');
+                            hidePreview();
                             return;
                         }
 

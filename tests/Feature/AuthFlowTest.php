@@ -174,6 +174,7 @@ class AuthFlowTest extends TestCase
 
         $client = Client::create(['clinic_id' => $clinic->id, 'first_name' => 'Cliente', 'phone' => '+15550123']);
         $service = Service::create(['clinic_id' => $clinic->id, 'name' => 'Corte', 'duration_minutes' => 30]);
+        $sofia->services()->sync([$service->id]);
         $appointment = Appointment::create([
             'clinic_id' => $clinic->id,
             'client_id' => $client->id,
@@ -998,6 +999,7 @@ class AuthFlowTest extends TestCase
             'name' => 'Sofia',
             'is_active' => true,
         ]);
+        $stylist->services()->sync([$service->id]);
 
         $this->actingAs($user)
             ->post('/agenda/nueva-cita', [

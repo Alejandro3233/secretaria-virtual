@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Base de datos - Secretaria Virtual')
+@section('title', 'Base de datos - Secretary365')
 @section('page_title', 'Base de datos')
 @section('page_subtitle', 'Consulta, crea, edita y elimina registros del sistema.')
 @section('page_actions')

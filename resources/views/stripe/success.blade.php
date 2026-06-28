@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Pago confirmado - Secretaria Virtual')
+@section('title', 'Pago confirmado - Secretary365')
 @section('page_title', 'Pago confirmado')
 @section('page_subtitle', 'Stripe confirmo la suscripcion del salon.')
 @section('page_actions')

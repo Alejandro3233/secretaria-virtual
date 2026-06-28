@@ -31,6 +31,11 @@ class Appointment extends Model
         'google_sync_error',
         'reminder_call_enabled',
         'reminder_sms_enabled',
+        'flash_campaign_recipient_id',
+        'campaign_discount_percent',
+        'campaign_price_cents',
+        'selected_addons',
+        'addons_total_cents',
     ];
 
     protected $casts = [
@@ -39,6 +44,10 @@ class Appointment extends Model
         'google_synced_at' => 'datetime',
         'reminder_call_enabled' => 'boolean',
         'reminder_sms_enabled' => 'boolean',
+        'campaign_discount_percent' => 'integer',
+        'campaign_price_cents' => 'integer',
+        'selected_addons' => 'array',
+        'addons_total_cents' => 'integer',
     ];
 
     public function clinic(): BelongsTo
@@ -64,6 +73,11 @@ class Appointment extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(AppointmentPayment::class);
+    }
+
+    public function flashCampaignRecipient(): BelongsTo
+    {
+        return $this->belongsTo(FlashCampaignRecipient::class);
     }
 
     public function trafficLightClass(?CarbonInterface $reference = null): string

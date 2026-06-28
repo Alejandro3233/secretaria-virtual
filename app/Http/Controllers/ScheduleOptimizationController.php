@@ -140,6 +140,10 @@ class ScheduleOptimizationController extends Controller
 
     private function validationError(Appointment $appointment, Carbon $target, Stylist $targetStylist): ?string
     {
+        if (! $targetStylist->canPerformService($appointment->service_id)) {
+            return 'Este empleado no realiza el servicio de la cita.';
+        }
+
         if (! $appointment->client?->phone) return 'La cita necesita un teléfono válido.';
         $currentStart = $appointment->starts_at->copy()->timezone($appointment->clinic->localTimezone());
         if ($target->isPast() || ! $target->isSameDay($currentStart)) return 'Esta propuesta ya no está disponible.';

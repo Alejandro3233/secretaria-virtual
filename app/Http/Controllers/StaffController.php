@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class StaffController extends Controller
@@ -30,7 +31,7 @@ class StaffController extends Controller
         return view('staff.index', [
             'clinic' => $clinic,
             'stylists' => $clinic->stylists()
-                ->with(['service', 'vacations' => fn ($query) => $query->where('ends_on', '>=', now($clinic->localTimezone())->toDateString())->orderBy('starts_on')])
+                ->with(['service', 'services', 'vacations' => fn ($query) => $query->where('ends_on', '>=', now($clinic->localTimezone())->toDateString())->orderBy('starts_on')])
                 ->when(! $clinic->google_ever_synced_at, fn ($query) => $query->where('is_internal', false))
                 ->orderBy('name')
                 ->get(),
@@ -42,9 +43,9 @@ class StaffController extends Controller
     public function store(Request $request, ClinicResolver $clinics): RedirectResponse
     {
         $clinic = $clinics->currentOrCreate($request->user());
-        $data = $this->validatedData($request, $clinic->id);
-
-        $clinic->stylists()->create($data);
+        [$data, $serviceIds] = $this->validatedData($request, $clinic->id);
+        $stylist = $clinic->stylists()->create($data);
+        $stylist->services()->sync($serviceIds);
 
         return redirect('/personal')->with('staff_status', 'Personal agregado correctamente.');
     }
@@ -105,7 +106,10 @@ class StaffController extends Controller
         $clinic = $request->user()->primaryClinic();
         abort_unless($clinic && $stylist->clinic_id === $clinic->id, 404);
 
-        $stylist->update($this->validatedData($request, $clinic->id));
+        [$data, $serviceIds] = $this->validatedData($request, $clinic->id, true);
+        $stylist->update($data);
+        $stylist->services()->sync($serviceIds);
+        $this->storeAvatar($request, $stylist);
 
         return redirect('/personal')->with('staff_status', 'Personal actualizado correctamente.');
     }
@@ -146,6 +150,7 @@ class StaffController extends Controller
         abort_unless($clinic && $stylist->clinic_id === $clinic->id, 404);
 
         DB::transaction(function () use ($stylist): void {
+            if ($stylist->avatar_path) Storage::disk('public')->delete($stylist->avatar_path);
             $stylist->appointments()->update(['stylist_id' => null]);
             $stylist->delete();
         });
@@ -153,11 +158,12 @@ class StaffController extends Controller
         return redirect('/personal')->with('staff_status', 'Empleado eliminado correctamente. La agenda se actualizo y sus citas quedaron sin asignar.');
     }
 
-    private function validatedData(Request $request, int $clinicId): array
+    private function validatedData(Request $request, int $clinicId, bool $allowAvatar = false): array
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'service_id' => ['nullable', 'integer', 'exists:services,id'],
+            'service_ids' => ['nullable', 'array'],
+            'service_ids.*' => ['integer', 'distinct', 'exists:services,id'],
             'specialty' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:40'],
             'email' => ['nullable', 'email', 'max:255'],
@@ -165,23 +171,78 @@ class StaffController extends Controller
             'work_days.*' => ['string', 'in:'.implode(',', array_keys(self::WORK_DAYS))],
             'work_starts_at' => ['nullable', 'date_format:H:i'],
             'work_ends_at' => ['nullable', 'date_format:H:i'],
+            'break_starts_at' => ['nullable', 'date_format:H:i', 'required_with:break_ends_at'],
+            'break_ends_at' => ['nullable', 'date_format:H:i', 'required_with:break_starts_at', 'after:break_starts_at'],
+            'weekly_schedule' => ['nullable', 'array'],
+            'weekly_schedule.*.enabled' => ['nullable', 'boolean'],
+            'weekly_schedule.*.start' => ['nullable', 'date_format:H:i'],
+            'weekly_schedule.*.end' => ['nullable', 'date_format:H:i'],
+            'weekly_schedule.*.break_start' => ['nullable', 'date_format:H:i'],
+            'weekly_schedule.*.break_end' => ['nullable', 'date_format:H:i'],
             'is_active' => ['nullable', 'boolean'],
+            'avatar' => $allowAvatar
+                ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072']
+                : ['prohibited'],
+            'preset_avatar' => $allowAvatar ? ['nullable', 'string', 'in:avatar-man-1.jpg,avatar-man-2.jpg,avatar-man-3.jpg,avatar-woman-1.jpg,avatar-woman-2.jpg,avatar-woman-3.jpg'] : ['prohibited'],
         ]);
 
-        if (! empty($data['service_id'])) {
-            abort_unless(
-                \App\Models\Service::query()
-                    ->where('clinic_id', $clinicId)
-                    ->whereKey($data['service_id'])
-                    ->exists(),
-                404
-            );
-        }
+        $serviceIds = collect($data['service_ids'] ?? [])->map(fn ($id) => (int) $id)->values();
+        abort_unless($serviceIds->isEmpty() || \App\Models\Service::query()
+            ->where('clinic_id', $clinicId)->whereIn('id', $serviceIds)->count() === $serviceIds->count(), 404);
 
+        unset($data['service_ids']);
+        $data['service_id'] = $serviceIds->first();
         $data['work_days'] = $data['work_days'] ?? [];
         $data['is_active'] = $request->boolean('is_active', true);
 
-        return $data;
+        if (! empty($data['weekly_schedule'])) {
+            $weekly = [];
+            foreach (self::WORK_DAYS as $day => $label) {
+                $entry = $data['weekly_schedule'][$day] ?? [];
+                $enabled = filter_var($entry['enabled'] ?? false, FILTER_VALIDATE_BOOL);
+                $start = $entry['start'] ?? null;
+                $end = $entry['end'] ?? null;
+                $breakStart = $entry['break_start'] ?? null;
+                $breakEnd = $entry['break_end'] ?? null;
+                if ($enabled && (! $start || ! $end || $end <= $start)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(["weekly_schedule.{$day}.start" => "Revisa el horario del {$label}: la salida debe ser posterior a la entrada."]);
+                }
+                if (($breakStart && ! $breakEnd) || ($breakEnd && ! $breakStart) || ($breakStart && ($breakEnd <= $breakStart || $breakStart < $start || $breakEnd > $end))) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(["weekly_schedule.{$day}.break_start" => "El descanso del {$label} debe estar completo y dentro de la jornada."]);
+                }
+                $weekly[$day] = ['enabled' => $enabled, 'start' => $start, 'end' => $end, 'break_start' => $breakStart, 'break_end' => $breakEnd];
+            }
+            $data['weekly_schedule'] = $weekly;
+            $data['work_days'] = collect($weekly)->filter(fn ($day) => $day['enabled'])->keys()->all();
+            $firstOpen = collect($weekly)->first(fn ($day) => $day['enabled']);
+            if ($firstOpen) {
+                $data['work_starts_at'] = $firstOpen['start']; $data['work_ends_at'] = $firstOpen['end'];
+                $data['break_starts_at'] = $firstOpen['break_start']; $data['break_ends_at'] = $firstOpen['break_end'];
+            }
+        }
+
+        if (! empty($data['break_starts_at']) && (! empty($data['work_starts_at']) && $data['break_starts_at'] < $data['work_starts_at']
+            || ! empty($data['work_ends_at']) && $data['break_ends_at'] > $data['work_ends_at'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'break_starts_at' => 'El descanso debe estar dentro del horario de trabajo.',
+            ]);
+        }
+
+        unset($data['avatar']);
+        unset($data['preset_avatar']);
+
+        return [$data, $serviceIds->all()];
+    }
+
+    private function storeAvatar(Request $request, Stylist $stylist): void
+    {
+        if (! $request->hasFile('avatar') && ! $request->filled('preset_avatar')) return;
+        $oldPath = $stylist->avatar_path;
+        $path = $request->hasFile('avatar')
+            ? $request->file('avatar')->store('staff-avatars/'.$stylist->clinic_id, 'public')
+            : 'preset:'.$request->string('preset_avatar');
+        $stylist->update(['avatar_path' => $path]);
+        if ($oldPath && ! str_starts_with($oldPath, 'preset:')) Storage::disk('public')->delete($oldPath);
     }
 
     private function matchingStylists(int $clinicId, string $name)

@@ -95,6 +95,9 @@ class PublicRescheduleController extends Controller
         [$startsAtValue, $stylistId] = array_pad(explode('|', $data['slot'], 2), 2, null);
         $startsAt = Carbon::parse($startsAtValue, $appointment->clinic->localTimezone());
         $stylist = $stylistId ? Stylist::query()->where('clinic_id', $appointment->clinic_id)->where('is_active', true)->where('is_internal', false)->whereKey((int) $stylistId)->first() : null;
+        if ($stylist && ! $stylist->canPerformService($appointment->service_id)) {
+            $stylist = null;
+        }
         $hasActiveStylists = Stylist::query()
             ->where('clinic_id', $appointment->clinic_id)
             ->where('is_active', true)
@@ -131,11 +134,25 @@ class PublicRescheduleController extends Controller
             ->where('clinic_id', $appointment->clinic_id)
             ->where('is_active', true)
             ->where('is_internal', false)
+            ->when($appointment->service_id, fn ($query) => $query->where(function ($services) use ($appointment): void {
+                $services->where('service_id', $appointment->service_id)
+                    ->orWhereHas('services', fn ($assigned) => $assigned->whereKey($appointment->service_id));
+            }))
             ->orderBy('name')
             ->get()
             ->filter(fn (Stylist $stylist) => $this->stylistWorksOnDate($stylist, $date));
 
         if ($stylists->isEmpty()) {
+            $hasConfiguredStaff = Stylist::query()
+                ->where('clinic_id', $appointment->clinic_id)
+                ->where('is_active', true)
+                ->where('is_internal', false)
+                ->exists();
+
+            if ($hasConfiguredStaff) {
+                return collect();
+            }
+
             $start = $date->copy()->timezone($timezone)->setTime(8, 0);
             $end = $date->copy()->timezone($timezone)->setTime(21, 0);
             $steps = max(0, (int) floor($start->diffInMinutes($end) / 30));
@@ -222,6 +239,10 @@ class PublicRescheduleController extends Controller
             return false;
         }
 
+        if ($stylist->isOnBreak($startsAt, $endsAt)) {
+            return false;
+        }
+
         return Appointment::query()
             ->where('clinic_id', $appointment->clinic_id)
             ->where('id', '!=', $appointment->id)
@@ -277,9 +298,7 @@ class PublicRescheduleController extends Controller
 
     private function stylistWorksOnDate(Stylist $stylist, Carbon $date): bool
     {
-        $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-
-        return in_array(strtolower($date->englishDayOfWeek), $workDays, true);
+        return $stylist->worksOnDate($date);
     }
 
     private function stylistOnVacation(Stylist $stylist, Carbon $date): bool
@@ -292,14 +311,14 @@ class PublicRescheduleController extends Controller
 
     private function workStartFor(Stylist $stylist, Carbon $date, string $timezone): Carbon
     {
-        [$hour, $minute] = $this->timeParts($stylist->work_starts_at ?: '08:00');
+        [$hour, $minute] = $this->timeParts($stylist->scheduleForDate($date)['start'] ?? '08:00');
 
         return $date->copy()->timezone($timezone)->setTime($hour, $minute);
     }
 
     private function workEndFor(Stylist $stylist, Carbon $date, string $timezone): Carbon
     {
-        [$hour, $minute] = $this->timeParts($stylist->work_ends_at ?: '21:00');
+        [$hour, $minute] = $this->timeParts($stylist->scheduleForDate($date)['end'] ?? '21:00');
 
         return $date->copy()->timezone($timezone)->setTime($hour, $minute);
     }

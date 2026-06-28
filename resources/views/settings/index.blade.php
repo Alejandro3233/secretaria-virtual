@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Ajustes - Secretaria Virtual')
+@section('title', 'Ajustes - Secretary365')
 @section('page_title', 'Configuracion del negocio')
 @section('page_subtitle', 'Organiza integraciones, reservas, facturacion y preferencias del salon.')
 
@@ -66,6 +66,8 @@
     @php($activeVoice = array_key_exists((string) $activeVoice, $voiceOptions) ? $activeVoice : $voiceService->defaultVoiceForLanguage($noraLanguage))
     @php($googleCalendarMappings = $clinic?->googleCalendarMappings()->with('stylist')->orderByDesc('is_primary')->orderBy('google_calendar_name')->get() ?? collect())
     @php($googleStylists = $clinic?->stylists()->where('is_internal', false)->where('is_active', true)->orderBy('name')->get() ?? collect())
+    @php($facilityResources = $clinic?->facilityResources()->orderBy('name')->get() ?? collect())
+    @php($resourceServices = $clinic?->services()->with('facilityResource')->orderBy('name')->get() ?? collect())
 
     <style>
         .settings-shell {
@@ -498,6 +500,12 @@
             <button class="settings-card" type="button" data-settings-card="servicios" data-settings-search="servicios personal estilistas empleados catalogo">
                 <span class="settings-card-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><circle cx="8" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="17" r="1"/></svg></span>
                 <span><b>Configuracion de servicios</b><span>Catalogo, duraciones, precios y profesionales disponibles.</span></span>
+                <span class="settings-arrow">&rsaquo;</span>
+            </button>
+
+            <button class="settings-card" type="button" data-settings-card="recursos" data-settings-search="puestos equipamiento sillas mesas camillas cabinas capacidad reservas simultaneas">
+                <span class="settings-card-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20V9h16v11M7 9V5h10v4M8 20v-5h8v5"/></svg></span>
+                <span><b>Puestos y equipamiento</b><span>Sillas, mesas, camillas y capacidad simultanea del negocio.</span></span>
                 <span class="settings-arrow">&rsaquo;</span>
             </button>
 
@@ -946,6 +954,61 @@
 
         </section>
 
+        <section class="settings-panel" data-settings-panel="recursos" data-settings-title="Puestos y equipamiento">
+            <article class="card" id="recursos">
+                <div class="section-title">
+                    <div><h2>Puestos y equipamiento</h2><span class="subtitle">Evita aceptar mas citas simultaneas que puestos fisicos disponibles.</span></div>
+                    <span class="status {{ $facilityResources->isNotEmpty() ? 'ok' : 'wait' }}">{{ $facilityResources->count() }} tipos</span>
+                </div>
+
+                <form method="POST" action="/ajustes/recursos" class="grid-3" style="align-items:end;margin-top:16px;">
+                    @csrf
+                    <div>
+                        <label for="resource_name">Nombre del recurso</label>
+                        <input id="resource_name" name="resource_name" autocomplete="off" placeholder="Escribe un recurso nuevo" required>
+                        @error('resource_name') <div class="danger" style="margin-top:7px;">{{ $message }}</div> @enderror
+                    </div>
+                    <div><label for="resource_capacity">Cantidad disponible</label><input id="resource_capacity" name="capacity" type="number" min="1" max="999" value="1" required></div>
+                    <button class="btn primary" type="submit">Agregar recurso</button>
+                    <div class="actions" style="grid-column:1/-1;gap:5px;">
+                        @foreach(['Sillas de peluqueria','Mesas de manicura','Camillas de masaje','Sillones de pedicura','Cabinas de estetica'] as $resourceSuggestion)
+                            <button class="btn" type="button" data-resource-suggestion="{{ $resourceSuggestion }}" style="min-height:28px;padding:0 8px;font-size:11px;">{{ $resourceSuggestion }}</button>
+                        @endforeach
+                    </div>
+                </form>
+
+                @if($facilityResources->isNotEmpty())
+                    <div style="display:grid;gap:10px;margin-top:18px;">
+                        @foreach($facilityResources as $resource)
+                            <div style="display:grid;grid-template-columns:1fr 150px auto;gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--soft);">
+                                <form id="resource-form-{{ $resource->id }}" method="POST" action="/ajustes/recursos/{{ $resource->id }}">@csrf @method('PUT')</form>
+                                <div><label>Recurso</label><input form="resource-form-{{ $resource->id }}" name="resource_name" value="{{ $resource->name }}" autocomplete="off" required></div>
+                                <div><label>Cantidad</label><input form="resource-form-{{ $resource->id }}" name="capacity" type="number" min="1" max="999" value="{{ $resource->capacity }}" required></div>
+                                <div class="actions" style="gap:6px;"><input form="resource-form-{{ $resource->id }}" type="hidden" name="is_active" value="0"><label style="display:flex;align-items:center;gap:6px;margin:0;"><input form="resource-form-{{ $resource->id }}" type="checkbox" name="is_active" value="1" style="width:auto;" @checked($resource->is_active)> Activo</label><button form="resource-form-{{ $resource->id }}" class="btn" type="submit">Guardar</button><form method="POST" action="/ajustes/recursos/{{ $resource->id }}" onsubmit="return confirm('¿Eliminar este recurso?');">@csrf @method('DELETE')<button class="btn" type="submit">Eliminar</button></form></div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </article>
+
+            <article class="card">
+                <div class="section-title"><div><h2>Recurso necesario por servicio</h2><span class="subtitle">Si un servicio no necesita un puesto limitado, selecciona “Sin recurso”.</span></div></div>
+                <form method="POST" action="/ajustes/recursos/asignaciones">
+                    @csrf
+                    <div style="display:grid;gap:9px;margin-top:14px;">
+                        @foreach($resourceServices as $service)
+                            <div style="display:grid;grid-template-columns:1fr minmax(210px,320px) 110px;gap:10px;align-items:end;padding:10px;border-bottom:1px solid var(--line);">
+                                <b>{{ $service->name }}</b>
+                                <div><label>Recurso</label><select name="assignments[{{ $service->id }}][resource_id]"><option value="">Sin recurso limitado</option>@foreach($facilityResources as $resource)<option value="{{ $resource->id }}" @selected($service->facility_resource_id === $resource->id)>{{ $resource->name }} ({{ $resource->capacity }})</option>@endforeach</select></div>
+                                <div><label>Unidades</label><input name="assignments[{{ $service->id }}][units]" type="number" min="1" max="99" value="{{ $service->resource_units ?: 1 }}"></div>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="actions" style="justify-content:flex-end;margin-top:16px;"><button class="btn primary" type="submit">Guardar asignaciones</button></div>
+                </form>
+            </article>
+        </section>
+
         <section class="settings-panel" data-settings-panel="avanzadas" data-settings-title="Opciones avanzadas">
             <article class="card integration-status-bar" id="voz-secretaria">
                 <div class="section-title">
@@ -1036,6 +1099,12 @@
     </div>
 
     <script>
+        document.querySelectorAll('[data-resource-suggestion]').forEach((button) => button.addEventListener('click', () => {
+            const input = document.getElementById('resource_name');
+            input.value = button.dataset.resourceSuggestion;
+            input.focus();
+        }));
+
         const settingsCards = Array.from(document.querySelectorAll('[data-settings-card]'));
         const settingsPanels = Array.from(document.querySelectorAll('[data-settings-panel]'));
         const settingsSearch = document.getElementById('settings-search');

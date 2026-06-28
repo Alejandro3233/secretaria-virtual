@@ -78,6 +78,29 @@ class StaffVacationTest extends TestCase
         $this->assertSame('Sofia esta de vacaciones del 10/07/2026 al 14/07/2026. Motivo: Viaje familiar.', $message);
     }
 
+    public function test_day_schedule_marks_vacation_column_as_blocked(): void
+    {
+        [$user, $clinic] = $this->clinicUser();
+        $stylist = Stylist::query()->create([
+            'clinic_id' => $clinic->id,
+            'name' => 'Sofia',
+            'work_days' => ['tuesday'],
+            'is_active' => true,
+        ]);
+        $stylist->vacations()->create([
+            'starts_on' => '2026-07-07',
+            'ends_on' => '2026-07-09',
+            'reason' => 'Descanso anual',
+        ]);
+
+        $this->actingAs($user)
+            ->get('/agenda?date=2026-07-07&view=day')
+            ->assertOk()
+            ->assertSee('is-vacation', false)
+            ->assertSee('data-unavailable="vacation"', false)
+            ->assertSee('Vacaciones');
+    }
+
     public function test_nora_can_query_stylist_vacations_by_name(): void
     {
         [$user, $clinic] = $this->clinicUser();

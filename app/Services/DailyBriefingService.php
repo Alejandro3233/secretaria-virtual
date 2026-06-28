@@ -112,7 +112,7 @@ class DailyBriefingService
             $parts[] = $vipCount === 1 ? 'Hoy recibimos a un cliente VIP.' : "Hoy recibimos a {$vipCount} clientes VIP.";
         }
 
-        $expectedRevenue = (int) $appointments->sum(fn (Appointment $appointment) => (int) ($appointment->service?->price_cents ?? 0));
+        $expectedRevenue = (int) $appointments->sum(fn (Appointment $appointment) => (int) ($appointment->campaign_price_cents ?? $appointment->service?->price_cents ?? 0));
         if ($expectedRevenue > 0) {
             $parts[] = 'Los ingresos previstos del día son '.number_format($expectedRevenue / 100, 2).' dólares.';
         }

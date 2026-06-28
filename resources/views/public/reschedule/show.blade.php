@@ -1,6 +1,6 @@
 @extends('public.bookings.layout')
 
-@section('title', 'Reagendar cita - Secretaria Virtual')
+@section('title', 'Reagendar cita - Secretary365')
 
 @section('content')
     <section class="hero">

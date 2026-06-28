@@ -121,15 +121,19 @@ class ScheduleOptimizationService
         $stylists = $clinic->stylists()
             ->where('is_active', true)
             ->where('is_internal', false)
+            ->when($candidate->service_id, fn ($query) => $query->where(function ($services) use ($candidate): void {
+                $services->where('service_id', $candidate->service_id)
+                    ->orWhereHas('services', fn ($assigned) => $assigned->whereKey($candidate->service_id));
+            }))
             ->get()
             ->sortBy(fn (Stylist $stylist) => $stylist->id === $candidate->stylist_id ? 0 : 1);
 
         foreach ($stylists as $stylist) {
-            $workDays = $stylist->work_days ?: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-            if (! in_array(strtolower($date->englishDayOfWeek), $workDays, true)) continue;
+            $daySchedule = $stylist->scheduleForDate($date);
+            if (! $daySchedule) continue;
 
-            $workStart = $this->atTime($date, $stylist->work_starts_at ?: '08:00');
-            $workEnd = $this->atTime($date, $stylist->work_ends_at ?: '21:00');
+            $workStart = $this->atTime($date, $daySchedule['start']);
+            $workEnd = $this->atTime($date, $daySchedule['end']);
             if ($date->isSameDay($now) && $now->greaterThan($workStart)) $workStart = $now->copy()->ceilMinutes(5);
             $scheduled = $appointments
                 ->where('stylist_id', $stylist->id)
@@ -178,6 +182,7 @@ class ScheduleOptimizationService
         $candidateStart = $this->startOf($candidate, $timezone);
         $proposedEnd = $gapStart->copy()->addMinutes($duration);
         if ($gapStart->diffInMinutes($candidateStart) < 30
+            || $stylist->isOnBreak($gapStart, $proposedEnd)
             || $this->hasConflict($clinic->id, $stylist->id, $candidate->id, $gapStart, $proposedEnd)) {
             return null;
         }

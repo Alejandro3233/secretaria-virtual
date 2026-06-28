@@ -14,6 +14,7 @@ use App\Http\Controllers\DatabaseAdminController;
 use App\Http\Controllers\DailyBriefingController;
 use App\Http\Controllers\GoogleCalendarController;
 use App\Http\Controllers\GoogleTextToSpeechController;
+use App\Http\Controllers\FlashCampaignController;
 use App\Http\Controllers\ManagerController;
 use App\Http\Controllers\NoraClientCallController;
 use App\Http\Controllers\NoraReminderController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\PublicRescheduleController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ScheduleOptimizationController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\FacilityResourceController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StripeSubscriptionController;
 use App\Http\Controllers\SuperAdminCostController;
@@ -52,6 +54,7 @@ Route::get('/particular', [PublicBookingController::class, 'index'])->name('publ
 Route::get('/salones/{clinic}', [PublicBookingController::class, 'show'])->name('public-bookings.show');
 Route::get('/salones/{clinic}/reservar', [PublicBookingController::class, 'create'])->name('public-bookings.create');
 Route::post('/salones/{clinic}/reservar', [PublicBookingController::class, 'store'])->name('public-bookings.store');
+Route::post('/twilio/sms/campaign-status', [FlashCampaignController::class, 'smsStatus'])->name('campaigns.sms-status');
 Route::get('/cita/{appointment}/{token}/confirmar', [PublicRescheduleController::class, 'confirm'])->name('public-appointments.confirm');
 Route::get('/cita/{appointment}/{token}/cancelar', [PublicRescheduleController::class, 'cancel'])->name('public-appointments.cancel');
 Route::get('/reagendar/{appointment}/{token}', [PublicRescheduleController::class, 'show'])->name('public-reschedule.show');
@@ -63,6 +66,14 @@ Route::post('/cita/{appointment}/adelantar', [ScheduleOptimizationController::cl
 
 Route::get('/citas', [AppointmentController::class, 'index'])->middleware('auth');
 Route::get('/informes/actividad', ActivityExportController::class)->middleware('auth')->name('activity-export');
+Route::middleware('auth')->group(function (): void {
+    Route::get('/campanas', [FlashCampaignController::class, 'index'])->name('campaigns.index');
+    Route::get('/campanas/nueva', [FlashCampaignController::class, 'create'])->name('campaigns.create');
+    Route::post('/campanas', [FlashCampaignController::class, 'store'])->name('campaigns.store');
+    Route::get('/campanas/{campaign}', [FlashCampaignController::class, 'show'])->name('campaigns.show');
+    Route::post('/campanas/{campaign}/enviar', [FlashCampaignController::class, 'send'])->name('campaigns.send');
+    Route::post('/campanas/{campaign}/finalizar', [FlashCampaignController::class, 'end'])->name('campaigns.end');
+});
 Route::get('/citas/{appointment}/editar', [AppointmentController::class, 'edit'])->middleware('auth');
 Route::put('/citas/{appointment}/recordatorio', [AppointmentController::class, 'reminders'])->middleware('auth');
 Route::post('/citas/{appointment}/pagos', [AppointmentPaymentController::class, 'store'])->middleware('auth')->name('appointments.payments.store');
@@ -94,6 +105,9 @@ Route::get('/personal/servicios', [ServiceController::class, 'index'])->middlewa
 Route::post('/personal/servicios', [ServiceController::class, 'store'])->middleware('auth');
 Route::post('/personal/servicios/catalogo-base', [ServiceController::class, 'seedTemplates'])->middleware('auth');
 Route::put('/personal/servicios/{service}', [ServiceController::class, 'update'])->middleware('auth');
+Route::post('/personal/servicios/{service}/extras', [ServiceController::class, 'storeAddon'])->middleware('auth');
+Route::put('/personal/servicios/{service}/extras/{addon}', [ServiceController::class, 'updateAddon'])->middleware('auth');
+Route::delete('/personal/servicios/{service}/extras/{addon}', [ServiceController::class, 'destroyAddon'])->middleware('auth');
 
 Route::get('/agenda', [ScheduleController::class, 'index'])->middleware('auth');
 Route::get('/agenda/nueva-cita', [ScheduleController::class, 'create'])->middleware('auth');
@@ -830,6 +844,10 @@ Route::get('/buscar', function (Request $request) {
 Route::get('/ajustes', function () {
     return view('settings.index');
 })->middleware('auth');
+Route::post('/ajustes/recursos', [FacilityResourceController::class, 'store'])->middleware('auth');
+Route::put('/ajustes/recursos/{resource}', [FacilityResourceController::class, 'update'])->middleware('auth');
+Route::delete('/ajustes/recursos/{resource}', [FacilityResourceController::class, 'destroy'])->middleware('auth');
+Route::post('/ajustes/recursos/asignaciones', [FacilityResourceController::class, 'assignServices'])->middleware('auth');
 Route::post('/ajustes/notificaciones', function (Request $request, ClinicResolver $clinics) {
     $clinic = $clinics->currentOrCreate($request->user());
     $booleanKeys = [

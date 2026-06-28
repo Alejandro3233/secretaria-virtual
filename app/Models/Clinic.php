@@ -133,6 +133,11 @@ class Clinic extends Model
         return $this->hasMany(Service::class);
     }
 
+    public function facilityResources(): HasMany
+    {
+        return $this->hasMany(FacilityResource::class);
+    }
+
     public function stylists(): HasMany
     {
         return $this->hasMany(Stylist::class);
@@ -146,5 +151,10 @@ class Clinic extends Model
     public function inventoryItems(): HasMany
     {
         return $this->hasMany(InventoryItem::class);
+    }
+
+    public function flashCampaigns(): HasMany
+    {
+        return $this->hasMany(FlashCampaign::class);
     }
 }

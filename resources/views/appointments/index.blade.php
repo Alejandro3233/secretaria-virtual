@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Citas - Secretaria Virtual')
+@section('title', 'Citas - Secretary365')
 @section('page_title', 'Citas')
 @section('page_subtitle', 'Gestiona reservas, confirmaciones, cambios y cancelaciones del salon.')
 @section('page_actions')
@@ -36,7 +36,7 @@
         }
 
         .appointment-filter a.active {
-            background: var(--brand);
+            background: #111827;
             color: white;
         }
 
@@ -419,7 +419,7 @@
                                 ? (($latestPayment->status === 'paid' ? 'Pagado' : 'Pago pendiente').' · '.$paymentMethodLabel)
                                 : 'Sin cobrar';
                             $paymentBadgeClass = $latestPayment?->status === 'paid' ? 'paid' : ($latestPayment ? 'pending' : '');
-                            $defaultAmount = number_format((($latestPayment?->amount_cents ?? $appointment->service?->price_cents ?? 0) / 100), 2, '.', '');
+                            $defaultAmount = number_format((($latestPayment?->amount_cents ?? (($appointment->campaign_price_cents ?? $appointment->service?->price_cents ?? 0) + ($appointment->addons_total_cents ?? 0))) / 100), 2, '.', '');
                             $canCloseAppointment = ! in_array($appointment->status, ['cancelled', 'canceled', 'completed'], true) && $latestPayment?->status !== 'paid';
                         @endphp
                         <article class="appointment-card {{ $appointment->trafficLightClass() }}">
@@ -435,7 +435,11 @@
                                     @endif
                                     {{ $clientName ?: 'Cliente' }} - {{ $serviceName ?: 'Cita' }}
                                 </strong>
-                                <span>{{ $appointment->chair_station ?: 'Sin estacion asignada' }}</span>
+                                @if(!empty($appointment->selected_addons))
+                                    <span>Extras: {{ collect($appointment->selected_addons)->pluck('name')->implode(', ') }} (+{{ number_format(($appointment->addons_total_cents ?? 0) / 100, 2) }})</span>
+                                @else
+                                    <span>{{ $appointment->chair_station ?: 'Sin estacion asignada' }}</span>
+                                @endif
                             </div>
 
                             <div class="appointment-card-detail">

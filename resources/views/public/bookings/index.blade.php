@@ -1,6 +1,6 @@
 @extends('public.bookings.layout')
 
-@section('title', 'Buscar salon - Secretaria Virtual')
+@section('title', 'Buscar salon - Secretary365')
 
 @section('content')
     <section class="hero">

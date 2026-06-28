@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <title>Iniciar sesion - Secretaria Virtual</title>
+    <title>Iniciar sesion - Secretary365</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
         input[type="email"], input[type="password"] { width: 100%; min-height: 44px; border: 1px solid #ccd5e0; border-radius: 6px; padding: 0 12px; }
         .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
         .check { display: inline-flex; align-items: center; gap: 8px; color: #647084; }
-        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #c0265a; color: white; font-weight: 900; cursor: pointer; margin-top: 20px; }
+        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #111827; color: white; font-weight: 900; cursor: pointer; margin-top: 20px; }
         .google-btn { min-height: 44px; width: 100%; border: 1px solid #ccd5e0; border-radius: 6px; background: white; color: #10131a; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 800; text-decoration: none; }
         .google-btn svg { width: 18px; height: 18px; }
         .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #647084; font-size: 13px; }

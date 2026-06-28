@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Pago cancelado - Secretaria Virtual')
+@section('title', 'Pago cancelado - Secretary365')
 @section('page_title', 'Pago cancelado')
 @section('page_subtitle', 'No se realizo ningun cambio en tu plan.')
 @section('page_actions')

@@ -95,7 +95,7 @@ class ManagerController extends Controller
                 return [
                     'service' => $service,
                     'appointments' => $items->count(),
-                    'revenue_cents' => $items->count() * (int) ($service->price_cents ?? 0),
+                    'revenue_cents' => $items->sum(fn (Appointment $appointment) => (int) ($appointment->campaign_price_cents ?? $service->price_cents ?? 0)),
                 ];
             })->sortByDesc('revenue_cents')->values();
 
@@ -206,7 +206,7 @@ class ManagerController extends Controller
 
     private function revenue(Collection $appointments): int
     {
-        return (int) $appointments->sum(fn (Appointment $appointment) => (int) ($appointment->service?->price_cents ?? 0));
+        return (int) $appointments->sum(fn (Appointment $appointment) => (int) ($appointment->campaign_price_cents ?? $appointment->service?->price_cents ?? 0));
     }
 
     private function availableMinutes(Collection $stylists, Carbon $start, Carbon $end): int
@@ -214,16 +214,14 @@ class ManagerController extends Controller
         $minutes = 0;
 
         foreach ($stylists as $stylist) {
-            $workDays = collect($stylist->work_days ?? [])->map(fn ($day) => strtolower((string) $day));
-            if ($workDays->isEmpty() || ! $stylist->work_starts_at || ! $stylist->work_ends_at) {
-                continue;
-            }
-
-            $dailyMinutes = max(0, Carbon::parse($stylist->work_starts_at)->diffInMinutes(Carbon::parse($stylist->work_ends_at)));
             for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
-                if ($workDays->contains(strtolower($day->englishDayOfWeek))) {
-                    $minutes += $dailyMinutes;
+                $schedule = $stylist->scheduleForDate($day);
+                if (! $schedule) continue;
+                $dailyMinutes = max(0, Carbon::parse($schedule['start'])->diffInMinutes(Carbon::parse($schedule['end'])));
+                if ($schedule['break_start'] && $schedule['break_end']) {
+                    $dailyMinutes = max(0, $dailyMinutes - Carbon::parse($schedule['break_start'])->diffInMinutes(Carbon::parse($schedule['break_end'])));
                 }
+                $minutes += $dailyMinutes;
             }
         }
 

@@ -411,7 +411,7 @@ class GoogleCalendarService
                     'client_id' => $this->calendarClient($clinic, $event)->id,
                     'service_id' => $this->calendarService($clinic)->id,
                     'stylist_id' => $googleStylist->id,
-                    'status' => 'confirmed',
+                    'status' => 'pending',
                     'source' => 'google_calendar',
                     'priority' => 'normal',
                     'reminder_call_enabled' => false,
@@ -430,6 +430,7 @@ class GoogleCalendarService
             ];
 
             if ($appointment->source === 'google_calendar') {
+                $syncedData['status'] = 'pending';
                 $syncedData['stylist_id'] = $googleStylist->id;
                 $syncedData['starts_at'] = $startsAt;
                 $syncedData['ends_at'] = $endsAt;

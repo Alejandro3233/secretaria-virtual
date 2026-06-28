@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Gestion de usuarios - Secretaria Virtual')
+@section('title', 'Gestion de usuarios - Secretary365')
 @section('page_title', 'Gestion de usuarios')
 @section('page_subtitle', 'Administra accesos de usuarios activos y deshabilitados.')
 @section('page_actions')
@@ -11,7 +11,7 @@
     <style>
         .user-tabs { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:18px; }
         .user-tabs a { border:1px solid var(--line); border-radius:999px; padding:8px 13px; background:#fff; color:var(--muted); font-size:12px; font-weight:900; }
-        .user-tabs a.active { border-color:var(--brand); background:var(--brand); color:#fff; }
+        .user-tabs a.active { border-color:#111827; background:#111827; color:#fff; }
         .user-actions { display:flex; gap:6px; flex-wrap:wrap; min-width:210px; }
         .user-actions form { margin:0; }
         .user-actions .btn { min-height:32px; padding:0 10px; font-size:11px; }

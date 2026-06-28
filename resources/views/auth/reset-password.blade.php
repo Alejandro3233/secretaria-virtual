@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon-grid.svg?v=1">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <title>Restablecer contrasena - Secretaria Virtual</title>
+    <title>Restablecer contrasena - Secretary365</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -17,7 +17,7 @@
         p { color: #70646b; line-height: 1.55; margin: 0 0 22px; }
         label { display: block; font-weight: 800; margin: 14px 0 7px; }
         input { width: 100%; min-height: 44px; border: 1px solid #dbcbd4; border-radius: 6px; padding: 0 12px; }
-        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #c0265a; color: white; font-weight: 900; cursor: pointer; margin-top: 20px; }
+        .btn { min-height: 44px; width: 100%; border: 0; border-radius: 6px; background: #111827; color: white; font-weight: 900; cursor: pointer; margin-top: 20px; }
         .error { margin-top: 8px; color: #b91c2a; font-size: 14px; }
     </style>
 </head>

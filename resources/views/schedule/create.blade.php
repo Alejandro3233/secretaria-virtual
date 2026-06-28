@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Nueva cita - Secretaria Virtual')
+@section('title', 'Nueva cita - Secretary365')
 @section('page_title', 'Nueva cita')
 @section('page_subtitle', 'Crea una cita en Secretaria Virtual. Si Google Calendar esta conectado, se sincroniza automaticamente.')
 @section('page_actions')
@@ -121,7 +121,7 @@
                 <select id="stylist_id" name="stylist_id">
                     <option value="">Sin asignar</option>
                     @foreach ($stylists as $stylist)
-                        <option value="{{ $stylist->id }}" @selected(old('stylist_id') == $stylist->id)>
+                        <option value="{{ $stylist->id }}" data-service-ids="{{ $stylist->services->pluck('id')->push($stylist->service_id)->filter()->unique()->implode(',') }}" @selected(old('stylist_id') == $stylist->id)>
                             {{ $stylist->name }}{{ $stylist->specialty ? ' - '.$stylist->specialty : '' }}
                         </option>
                     @endforeach
@@ -178,6 +178,20 @@
         const clientFirstName = document.getElementById('client_first_name');
         const clientLastName = document.getElementById('client_last_name');
         const clientPhone = document.getElementById('client_phone');
+        const stylistSelect = document.getElementById('stylist_id');
+
+        const filterStylistsByService = () => {
+            const serviceId = serviceSelect.value;
+            [...stylistSelect.options].forEach((option, index) => {
+                if (index === 0) return;
+                const allowed = (option.dataset.serviceIds || '').split(',').filter(Boolean);
+                option.hidden = !!serviceId && !allowed.includes(serviceId);
+                option.disabled = option.hidden;
+            });
+            if (stylistSelect.selectedOptions[0]?.disabled) stylistSelect.value = '';
+        };
+        serviceSelect.addEventListener('change', filterStylistsByService);
+        filterStylistsByService();
         const clientEmail = document.getElementById('client_email');
         let clientLookupTimer = null;
 
